@@ -7,6 +7,7 @@ Use this file to keep resume wording honest. Move bullets from "planned" to "ver
 Safe to say now:
 
 - Built a local OpenSeeker AgentDataFactory scaffold for multi-hop QA, tool-use QA, and noisy-context retrieval QA, with ReAct-style trajectories and deterministic verifier filtering.
+- Added a seed-file driven generation entrypoint that can scale the same schema to baseline-size runs while preserving deterministic provenance and duplicate filtering.
 - Defined a unified JSONL schema covering `id`, `task_type`, `question`, `answer`, `gold_evidence`, `tool_calls`, `trajectory`, `verifier_result`, `difficulty`, `source`, and `quality_score`.
 - Implemented exports for Agent SFT conversations, reward-format samples, trace JSONL, and summary CSV, with pytest coverage for schema, pipeline, exports, and CLI behavior.
 - Added a remote experiment safety contract for a shared 8-GPU lab server, including preflight, dry run, tmux launch, GPU limits, approved paths, and local experiment recording.
@@ -54,4 +55,3 @@ OpenSeeker AgentDataFactory                                                     
 • 设计 evidence verifier、tool execution verifier 与 trajectory verifier，统计可解率、轨迹有效率、证据命中率与人工抽样通过率，并通过 ablation 分析数据复杂度和过滤策略影响。
 • 使用 <GPU 配置> 完成本地/远程批量生成与 Qwen <7B/14B> LoRA SFT；相比原 5k 数据基线，在 <metric> 上从 <baseline> 提升至 <result>。
 ```
-

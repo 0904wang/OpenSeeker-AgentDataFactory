@@ -171,3 +171,53 @@ Before launch, report:
 - exact log path
 - exact results path
 - checkpoint path if training is involved
+
+## Candidate - 5k Baseline Generation Approval
+
+This is the next real experiment after dry run. Do not run until explicitly approved.
+
+Assumptions:
+
+- repo is up to date on `main`
+- conda env exists
+- dry run has passed
+- selected GPU is `0` unless a fresh GPU check suggests otherwise
+- this is generation/export only, not SFT/RL training
+
+Approval payload:
+
+```text
+repo: /data/wzl/OpenSeeker-AgentDataFactory/repo
+branch: main
+env: /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
+gpu: 0
+num_gpus: 1
+tmux_session: openseeker-20260609-baseline-5k
+log_path: /data/wzl/OpenSeeker-AgentDataFactory/logs/baseline-5k.log
+results_path: /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
+checkpoint_path: not applicable
+```
+
+Command:
+
+```bash
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
+  set -e
+  cd /data/wzl/OpenSeeker-AgentDataFactory/repo
+  source /home/user/anaconda3/etc/profile.d/conda.sh
+  conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
+  tmux new-session -d -s openseeker-20260609-baseline-5k \
+  \"CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate --count 5000 --seed-file data/seeds/wikidata_seed_sample.jsonl --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/baseline-5k.log\"
+'"
+```
+
+Monitoring:
+
+```bash
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
+  nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader
+  tmux list-sessions
+  tail -n 80 /data/wzl/OpenSeeker-AgentDataFactory/logs/baseline-5k.log
+  ls -lah /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
+'"
+```

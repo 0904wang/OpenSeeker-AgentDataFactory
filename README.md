@@ -86,6 +86,19 @@ outputs/demo/
   summary.csv
 ```
 
+## Generate From Seed File
+
+Use `generate` for baseline-scale runs from a JSONL seed file:
+
+```bash
+python -m openseeker_factory.cli generate \
+  --count 5000 \
+  --seed-file data/seeds/wikidata_seed_sample.jsonl \
+  --out-dir outputs/baseline-5k
+```
+
+`data/seeds/wikidata_seed_sample.jsonl` is a small format example. For a real 5k baseline, replace it with a Wikidata-derived seed file and keep the same schema.
+
 ## Data Schema
 
 Every sample uses this JSONL contract:
@@ -118,6 +131,23 @@ Verifier checks currently include:
 - `tool_success`
 - `trajectory_valid`
 
+## Seed File Schema
+
+Each seed JSONL row must contain:
+
+```text
+id
+task_type
+entity
+relation
+intermediate
+answer
+evidence
+noisy_context
+```
+
+`noisy_context` may be an empty list. The generator repeats seeds as needed and creates deterministic question variants so duplicate filtering can remain strict.
+
 ## Remote Experiments
 
 Remote execution is governed by `AGENTS.md` and the `safe-remote-experiments` contract.
@@ -142,7 +172,17 @@ Before any real remote run:
 4. Wait for user approval.
 5. Record completed experiments locally under `docs/experiments/`.
 
+First baseline command candidate:
+
+```bash
+PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate \
+  --count 5000 \
+  --seed-file data/seeds/wikidata_seed_sample.jsonl \
+  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
+```
+
+This candidate still requires user approval before remote execution.
+
 ## Resume Boundary
 
 Use the current project in a resume only as a verified system scaffold until remote experiments are run. Do not claim 20k/50k data scale, 4x5090 throughput, Qwen SFT improvements, or GRPO gains until there is a local experiment record with evidence.
-

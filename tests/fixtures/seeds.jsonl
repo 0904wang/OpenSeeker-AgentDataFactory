@@ -1,0 +1,3 @@
+{"id":"wikidata-ada","task_type":"multi_hop_qa","entity":"Ada Lovelace","relation":"birthplace_capital_country","intermediate":"London","answer":"United Kingdom","evidence":["Ada Lovelace was born in London.","London is the capital of the United Kingdom."],"noisy_context":["Ada Lovelace wrote notes on the Analytical Engine."]}
+{"id":"wikidata-curie","task_type":"tool_use_qa","entity":"Marie Curie","relation":"birthplace_current_country","intermediate":"Warsaw","answer":"Poland","evidence":["Marie Curie was born in Warsaw.","Warsaw is the capital of Poland."],"noisy_context":["Marie Curie researched radioactivity in Paris."]}
+

@@ -60,6 +60,17 @@ Target output:
 - quality summary
 - trace sample inspection
 
+Candidate command:
+
+```bash
+PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate \
+  --count 5000 \
+  --seed-file data/seeds/wikidata_seed_sample.jsonl \
+  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
+```
+
+`data/seeds/wikidata_seed_sample.jsonl` is a schema sample. Replace it with the real Wikidata-derived seed file before treating the run as a true 5k baseline.
+
 Metrics:
 
 - accepted count
@@ -142,4 +153,3 @@ Acceptance:
 - compare baseline, old 5k, new 20k, and optional new 50k
 - record model, commit, env, GPUs, command, logs, checkpoints, and metrics
 - only then update resume with improvement numbers
-

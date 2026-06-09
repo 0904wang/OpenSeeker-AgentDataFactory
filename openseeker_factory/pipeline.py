@@ -19,6 +19,7 @@ class SeedTask:
     answer: str
     evidence: list[str]
     noisy_context: list[str]
+    variant_index: int = 0
 
 
 @dataclass(eq=True)
@@ -61,8 +62,11 @@ class QualityMetrics:
 
 
 class AgentDataFactory:
-    def __init__(self, seeds: list[SeedTask]) -> None:
+    def __init__(self, seeds: list[SeedTask], seed_source_label: str = "wikidata-demo") -> None:
+        if not seeds:
+            raise ValueError("at least one seed task is required")
         self._seeds = seeds
+        self._seed_source_label = seed_source_label
 
     @classmethod
     def from_demo_knowledge_graph(cls) -> "AgentDataFactory":
@@ -117,7 +121,45 @@ class AgentDataFactory:
                 ],
             ),
         ]
-        return cls(seeds)
+        return cls(seeds, seed_source_label="wikidata-demo")
+
+    @classmethod
+    def from_seed_file(cls, path: Path) -> "AgentDataFactory":
+        seeds: list[SeedTask] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                try:
+                    seeds.append(
+                        SeedTask(
+                            id=str(row["id"]),
+                            task_type=str(row["task_type"]),
+                            entity=str(row["entity"]),
+                            relation=str(row["relation"]),
+                            intermediate=str(row["intermediate"]),
+                            answer=str(row["answer"]),
+                            evidence=[str(item) for item in row["evidence"]],
+                            noisy_context=[
+                                str(item) for item in row.get("noisy_context", [])
+                            ],
+                            variant_index=0,
+                        )
+                    )
+                except KeyError as exc:
+                    raise ValueError(
+                        f"Missing required seed field {exc.args[0]!r} on line {line_number}"
+                    ) from exc
+        return cls(seeds, seed_source_label=path.as_posix())
+
+    def generate_verified(
+        self, count: int, strategy: str = "evol_instruct"
+    ) -> tuple[list[AgentDataSample], list[AgentDataSample], QualityMetrics]:
+        seeds = self.seed_expand(count=count)
+        tasks = [self.evolve_task(seed, strategy=strategy) for seed in seeds]
+        samples = [self.generate_trajectory(task) for task in tasks]
+        return self.verify_and_filter(samples)
 
     def seed_expand(self, count: int) -> list[SeedTask]:
         if count < 1:
@@ -135,6 +177,7 @@ class AgentDataFactory:
                     answer=base.answer,
                     evidence=list(base.evidence),
                     noisy_context=list(base.noisy_context),
+                    variant_index=index + 1,
                 )
             )
         return expanded
@@ -145,21 +188,7 @@ class AgentDataFactory:
         if strategy not in {"evol_instruct", "magpie_self_instruct"}:
             raise ValueError("strategy must be evol_instruct or magpie_self_instruct")
 
-        if seed.task_type == "tool_use_qa":
-            question = (
-                f"Use the available lookup tool to identify the present-day country "
-                f"associated with {seed.entity}'s birthplace."
-            )
-        elif seed.task_type == "noisy_context_retrieval_qa":
-            question = (
-                f"Ignore distracting context and answer: which country contains "
-                f"{seed.entity}'s birthplace?"
-            )
-        else:
-            question = (
-                f"Answer by chaining facts: which country is tied to the capital or "
-                f"location of {seed.entity}'s birthplace?"
-            )
+        question = self._build_question(seed)
 
         tool_plan = [
             ToolCall(
@@ -184,7 +213,8 @@ class AgentDataFactory:
             difficulty="medium",
             source={
                 "seed_id": seed.id,
-                "seed_source": "wikidata-demo",
+                "seed_source": self._seed_source_label,
+                "variant_index": seed.variant_index,
                 "strategy": strategy,
                 "references": [
                     "Self-Instruct",
@@ -194,6 +224,36 @@ class AgentDataFactory:
                 ],
             },
         )
+
+    def _build_question(self, seed: SeedTask) -> str:
+        variant = seed.variant_index or 1
+        if seed.task_type == "tool_use_qa":
+            templates = [
+                "Use the available lookup tool to identify the present-day country associated with {entity}'s birthplace.",
+                "Call the lookup tool step by step: where is {entity}'s birthplace located today?",
+                "Resolve {entity}'s birthplace with tools, then return the country.",
+                "Find {entity}'s birthplace via lookup and map that location to its country.",
+            ]
+        elif seed.task_type == "noisy_context_retrieval_qa":
+            templates = [
+                "Ignore distracting context and answer: which country contains {entity}'s birthplace?",
+                "Filter the noisy evidence and identify the country of {entity}'s birthplace.",
+                "Using only relevant evidence, determine the country tied to {entity}'s birthplace.",
+                "Discard unrelated clues and answer the birthplace country for {entity}.",
+            ]
+        else:
+            templates = [
+                "Answer by chaining facts: which country is tied to the capital or location of {entity}'s birthplace?",
+                "Use multi-hop reasoning to find the country connected to {entity}'s birthplace.",
+                "First identify {entity}'s birthplace, then infer the country from that location.",
+                "Follow the evidence chain from {entity} to birthplace to country.",
+            ]
+        template = templates[(variant - 1) % len(templates)]
+        round_number = ((variant - 1) // len(templates)) + 1
+        question = template.format(entity=seed.entity)
+        if round_number > 1:
+            question = f"{question} Use synthesis round {round_number}."
+        return question
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         trajectory = [
@@ -390,4 +450,3 @@ class AgentDataFactory:
 
     def _ensure_parent(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-
