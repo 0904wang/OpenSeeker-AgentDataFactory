@@ -1,0 +1,20 @@
+[project]
+name = "openseeker-agent-data-factory"
+version = "0.1.0"
+description = "Verifiable synthetic data factory for multi-hop retrieval and tool-use agents."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+openseeker-factory = "openseeker_factory.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "-q --basetemp=.pytest-tmp"
+testpaths = ["tests"]
+

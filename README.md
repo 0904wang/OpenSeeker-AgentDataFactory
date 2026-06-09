@@ -1,0 +1,148 @@
+# OpenSeeker AgentDataFactory
+
+OpenSeeker AgentDataFactory is a resume-oriented but runnable synthetic data project for LLM agents. It upgrades the earlier OpenSeeker data synthesis experience from a small multi-hop QA pipeline into a verifiable data factory for:
+
+- multi-hop QA
+- tool-use QA
+- noisy-context retrieval QA
+- ReAct-style trajectories
+- verifier-based filtering
+- SFT and reward-format export
+
+The local implementation is intentionally small and deterministic. It proves the project contract, schema, exports, and verification loop before moving long-running generation or training to the remote GPU server.
+
+## Current Status
+
+Verified locally:
+
+- `seed_expand`
+- `evolve_task`
+- `generate_trajectory`
+- `verify_and_filter`
+- JSONL sample export
+- Agent SFT conversation export
+- RL reward-format export
+- trace JSONL and summary CSV export
+- CLI demo run
+- pytest coverage for schema, pipeline, exports, and CLI
+
+Not yet claimed as completed:
+
+- 20k / 50k synthetic data generation
+- Qwen 7B / 14B SFT results
+- verl / GRPO results
+- 4xRTX 5090 throughput numbers
+- downstream benchmark improvements
+
+Those belong to the experiment roadmap and must be recorded under `docs/experiments/` after they actually run.
+
+## Research Basis
+
+The project design borrows from three open-source lines:
+
+| Category | Projects | What to borrow |
+| --- | --- | --- |
+| Instruction synthesis | Stanford Alpaca, Self-Instruct, WizardLM, Magpie | seed instruction generation, task evolution, complexity expansion |
+| Data pipelines | Distilabel, Bespoke Curator, Meta Synthetic Data Kit, DataDreamer | structured outputs, batch generation, retry/cache, local model backends |
+| Agent/verifiable data | CAMEL, ToolBench, AgentTuning, OpenThoughts, Loong | tool-use trajectories, verifier filtering, reasoning data curation |
+
+See `docs/research/github-synthetic-data-projects.md` for the curated list and resume relevance.
+
+## Install
+
+```bash
+python -m pip install -e .
+python -m pip install pytest
+```
+
+The current package has no runtime third-party dependency. `pytest` is only needed for tests.
+
+## Run Tests
+
+```bash
+python -m pytest
+```
+
+Expected local result at the time of writing:
+
+```text
+7 passed
+```
+
+## Run Demo
+
+```bash
+python -m openseeker_factory.cli demo --count 3 --out-dir outputs/demo
+```
+
+Expected files:
+
+```text
+outputs/demo/
+  samples.jsonl
+  sft_conversations.jsonl
+  rl_rewards.jsonl
+  trace.jsonl
+  summary.csv
+```
+
+## Data Schema
+
+Every sample uses this JSONL contract:
+
+```text
+id
+task_type
+question
+answer
+gold_evidence
+tool_calls
+trajectory
+verifier_result
+difficulty
+source
+quality_score
+```
+
+Allowed `task_type` values:
+
+- `multi_hop_qa`
+- `tool_use_qa`
+- `noisy_context_retrieval_qa`
+
+Verifier checks currently include:
+
+- `not_duplicate`
+- `answer_supported`
+- `evidence_coverage`
+- `tool_success`
+- `trajectory_valid`
+
+## Remote Experiments
+
+Remote execution is governed by `AGENTS.md` and the `safe-remote-experiments` contract.
+
+Remote root:
+
+```bash
+/data/wzl/OpenSeeker-AgentDataFactory
+```
+
+Approved long-running process manager:
+
+```text
+tmux
+```
+
+Before any real remote run:
+
+1. Run preflight checks.
+2. Run a smoke test and dry run.
+3. Report exact command, GPUs, tmux session, log path, results path, and checkpoint path if applicable.
+4. Wait for user approval.
+5. Record completed experiments locally under `docs/experiments/`.
+
+## Resume Boundary
+
+Use the current project in a resume only as a verified system scaffold until remote experiments are run. Do not claim 20k/50k data scale, 4x5090 throughput, Qwen SFT improvements, or GRPO gains until there is a local experiment record with evidence.
+
