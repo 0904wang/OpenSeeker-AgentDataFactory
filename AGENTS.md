@@ -37,8 +37,8 @@ activate_env: "source /home/user/anaconda3/etc/profile.d/conda.sh && conda activ
 scheduler: "tmux"
 code_sync: "explicit git pull --ff-only or narrow file sync approved by the user"
 branch: "main"
-dry_run_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && python -m pytest && python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run"
-launch_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && tmux new-session -d -s openseeker-YYYYMMDD-task-name \"CUDA_VISIBLE_DEVICES=0 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log\""
+dry_run_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && PYTHONNOUSERSITE=1 python -m pytest && PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run"
+launch_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && tmux new-session -d -s openseeker-YYYYMMDD-task-name \"CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log\""
 log_path: "/data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log"
 results_dir: "/data/wzl/OpenSeeker-AgentDataFactory/results/task-name"
 monitor_commands:
@@ -199,6 +199,7 @@ Allowed installation scope:
 - active env is `/data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory`
 - `pip`, `uv`, and `conda` installs that clearly target the active approved env
 - PyTorch CUDA runtime packages inside the approved env
+- commands that run Python in the approved env must set `PYTHONNOUSERSITE=1` to avoid loading packages from `/home/user/.local`
 
 Forbidden installation scope:
 
@@ -340,8 +341,8 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 '\
   cd /data/wzl/OpenSeeker-AgentDataFactory/repo && \
   source /home/user/anaconda3/etc/profile.d/conda.sh && \
   conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && \
-  python -m pytest && \
-  python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run'
+  PYTHONNOUSERSITE=1 python -m pytest && \
+  PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run'
 ```
 
 If the smoke test fails, stop and report after at most one automatic retry.
@@ -379,7 +380,7 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 '\
   source /home/user/anaconda3/etc/profile.d/conda.sh && \
   conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && \
   tmux new-session -d -s openseeker-YYYYMMDD-task-name \
-  "CUDA_VISIBLE_DEVICES=0 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log"'
+  "CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log"'
 ```
 
 ## tmux Rules
@@ -521,7 +522,7 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 '\
   cd /data/wzl/OpenSeeker-AgentDataFactory/repo && \
   source /home/user/anaconda3/etc/profile.d/conda.sh && \
   conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && \
-  python --version'
+  PYTHONNOUSERSITE=1 python --version'
 ```
 
 Example GPU check:

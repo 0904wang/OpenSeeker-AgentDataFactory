@@ -124,7 +124,7 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
   cd /data/wzl/OpenSeeker-AgentDataFactory/repo
   source /home/user/anaconda3/etc/profile.d/conda.sh
   conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
-  python -m pip install -e . pytest
+  PYTHONNOUSERSITE=1 python -m pip install -e . pytest
 '"
 ```
 
@@ -140,11 +140,13 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
   cd /data/wzl/OpenSeeker-AgentDataFactory/repo
   source /home/user/anaconda3/etc/profile.d/conda.sh
   conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
-  python -m pytest
-  python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run
+  PYTHONNOUSERSITE=1 python -m pytest
+  PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run
   cat /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run/summary.csv
 '"
 ```
+
+Note: `PYTHONNOUSERSITE=1` is required because the server has user-level Python packages under `/home/user/.local` that can leak into the project conda environment and auto-load unrelated pytest plugins.
 
 Acceptance:
 
@@ -169,4 +171,3 @@ Before launch, report:
 - exact log path
 - exact results path
 - checkpoint path if training is involved
-
