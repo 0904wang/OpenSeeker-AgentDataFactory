@@ -14,7 +14,10 @@ dev = [
 [project.scripts]
 openseeker-factory = "openseeker_factory.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["openseeker_factory*"]
+exclude = ["data*", "docs*", "outputs*", "tests*"]
+
 [tool.pytest.ini_options]
 addopts = "-q --basetemp=.pytest-tmp"
 testpaths = ["tests"]
-
