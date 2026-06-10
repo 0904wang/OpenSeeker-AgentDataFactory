@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from openseeker_factory.backends import build_chat_backend
 from openseeker_factory.pipeline import AgentDataFactory
 
 
@@ -42,6 +43,33 @@ def build_parser() -> argparse.ArgumentParser:
         default="evol_instruct",
         help="Task expansion strategy label.",
     )
+    generate.add_argument(
+        "--teacher-backend",
+        choices=["none", "openai-compatible"],
+        default="none",
+        help="Optional teacher backend for drafting evolved tasks.",
+    )
+    generate.add_argument(
+        "--teacher-base-url",
+        default=None,
+        help="Base URL for the OpenAI-compatible backend, such as http://127.0.0.1:8000/v1.",
+    )
+    generate.add_argument(
+        "--teacher-model",
+        default=None,
+        help="Model name for the OpenAI-compatible backend.",
+    )
+    generate.add_argument(
+        "--teacher-api-key-env",
+        default="OPENAI_API_KEY",
+        help="Environment variable name holding the API key.",
+    )
+    generate.add_argument(
+        "--teacher-timeout-s",
+        type=float,
+        default=30.0,
+        help="Request timeout for the teacher backend.",
+    )
     return parser
 
 
@@ -66,8 +94,14 @@ def run_demo(count: int, out_dir: Path) -> int:
     return 0
 
 
-def run_generate(count: int, seed_file: Path, out_dir: Path, strategy: str) -> int:
-    factory = AgentDataFactory.from_seed_file(seed_file)
+def run_generate(
+    count: int,
+    seed_file: Path,
+    out_dir: Path,
+    strategy: str,
+    teacher_backend,
+):
+    factory = AgentDataFactory.from_seed_file(seed_file, teacher_backend=teacher_backend)
     accepted, rejected, metrics = factory.generate_verified(
         count=count, strategy=strategy
     )
@@ -85,7 +119,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "demo":
         return run_demo(args.count, args.out_dir)
     if args.command == "generate":
-        return run_generate(args.count, args.seed_file, args.out_dir, args.strategy)
+        teacher_backend = build_chat_backend(
+            backend=args.teacher_backend,
+            base_url=args.teacher_base_url,
+            model=args.teacher_model,
+            api_key_env=args.teacher_api_key_env,
+            timeout_s=args.teacher_timeout_s,
+        )
+        return run_generate(
+            args.count,
+            args.seed_file,
+            args.out_dir,
+            args.strategy,
+            teacher_backend,
+        )
     raise ValueError(f"Unknown command: {args.command}")
 
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from openseeker_factory.backends import ChatBackend
 from openseeker_factory.schema import AgentDataSample, ToolCall, VerifierResult
 
 
@@ -33,6 +34,7 @@ class EvolvedTask:
     tool_plan: list[ToolCall]
     difficulty: str
     source: dict[str, Any]
+    trajectory_draft: list[str] | None = None
 
 
 @dataclass(eq=True)
@@ -62,14 +64,22 @@ class QualityMetrics:
 
 
 class AgentDataFactory:
-    def __init__(self, seeds: list[SeedTask], seed_source_label: str = "wikidata-demo") -> None:
+    def __init__(
+        self,
+        seeds: list[SeedTask],
+        seed_source_label: str = "wikidata-demo",
+        teacher_backend: ChatBackend | None = None,
+    ) -> None:
         if not seeds:
             raise ValueError("at least one seed task is required")
         self._seeds = seeds
         self._seed_source_label = seed_source_label
+        self._teacher_backend = teacher_backend
 
     @classmethod
-    def from_demo_knowledge_graph(cls) -> "AgentDataFactory":
+    def from_demo_knowledge_graph(
+        cls, teacher_backend: ChatBackend | None = None
+    ) -> "AgentDataFactory":
         seeds = [
             SeedTask(
                 id="demo-ada",
@@ -121,10 +131,16 @@ class AgentDataFactory:
                 ],
             ),
         ]
-        return cls(seeds, seed_source_label="wikidata-demo")
+        return cls(
+            seeds,
+            seed_source_label="wikidata-demo",
+            teacher_backend=teacher_backend,
+        )
 
     @classmethod
-    def from_seed_file(cls, path: Path) -> "AgentDataFactory":
+    def from_seed_file(
+        cls, path: Path, teacher_backend: ChatBackend | None = None
+    ) -> "AgentDataFactory":
         seeds: list[SeedTask] = []
         with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -151,7 +167,11 @@ class AgentDataFactory:
                     raise ValueError(
                         f"Missing required seed field {exc.args[0]!r} on line {line_number}"
                     ) from exc
-        return cls(seeds, seed_source_label=path.as_posix())
+        return cls(
+            seeds,
+            seed_source_label=path.as_posix(),
+            teacher_backend=teacher_backend,
+        )
 
     def generate_verified(
         self, count: int, strategy: str = "evol_instruct"
@@ -202,7 +222,7 @@ class AgentDataFactory:
                 result=seed.answer,
             ),
         ]
-        return EvolvedTask(
+        task = EvolvedTask(
             id=seed.id.replace("demo-", "task-"),
             task_type=seed.task_type,
             question=question,
@@ -223,7 +243,46 @@ class AgentDataFactory:
                     "ToolBench/AgentTuning",
                 ],
             },
+            trajectory_draft=None,
         )
+        if self._teacher_backend is not None:
+            draft = self._teacher_backend.complete_json(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Return JSON with question, difficulty, and trajectory "
+                            "for a synthetic agent task."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "seed_id": seed.id,
+                                "task_type": seed.task_type,
+                                "entity": seed.entity,
+                                "relation": seed.relation,
+                                "intermediate": seed.intermediate,
+                                "answer": seed.answer,
+                                "evidence": seed.evidence,
+                                "noisy_context": seed.noisy_context,
+                                "strategy": strategy,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ]
+            )
+            question = str(draft.get("question", question))
+            difficulty = str(draft.get("difficulty", "medium"))
+            trajectory_draft = [str(item) for item in draft.get("trajectory", []) if str(item)]
+            task.question = question
+            task.difficulty = difficulty
+            task.trajectory_draft = trajectory_draft or None
+            task.source = dict(task.source)
+            task.source["teacher_backend"] = self._teacher_backend.name
+        return task
 
     def _build_question(self, seed: SeedTask) -> str:
         variant = seed.variant_index or 1
@@ -256,7 +315,7 @@ class AgentDataFactory:
         return question
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
-        trajectory = [
+        trajectory = task.trajectory_draft or [
             "Thought: Identify the entity's birthplace.",
             f"Action: wikidata_lookup[{task.tool_plan[0].query}]",
             f"Observation: {task.tool_plan[0].result}",
@@ -265,7 +324,7 @@ class AgentDataFactory:
             f"Observation: {task.tool_plan[1].result}",
             f"Final: {task.answer}",
         ]
-        if task.task_type == "noisy_context_retrieval_qa":
+        if task.task_type == "noisy_context_retrieval_qa" and task.trajectory_draft is None:
             trajectory.insert(0, "Thought: Discard context that is not evidence-bearing.")
 
         return AgentDataSample(

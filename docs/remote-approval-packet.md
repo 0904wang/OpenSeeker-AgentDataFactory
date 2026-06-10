@@ -216,3 +216,45 @@ ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
   ls -lah /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
 '"
 ```
+
+## Candidate - DeepSeek V4 Pro Teacher Dry Run
+
+This is the first real LLM-backed data synthesis run. It uses the official DeepSeek OpenAI-compatible API and does not consume remote GPUs.
+
+Do not run until explicitly approved.
+
+Approval payload:
+
+```text
+repo: /data/wzl/OpenSeeker-AgentDataFactory/repo
+branch: main
+env: /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
+gpu: none
+num_gpus: 0
+tmux_session: openseeker-20260610-deepseek-teacher-10
+model: deepseek-v4-pro
+base_url: https://api.deepseek.com
+api_key_env: DEEPSEEK_API_KEY
+log_path: /data/wzl/OpenSeeker-AgentDataFactory/logs/deepseek-teacher-10-20260610.log
+results_path: /data/wzl/OpenSeeker-AgentDataFactory/results/deepseek-teacher-10-20260610
+checkpoint_path: not applicable
+```
+
+Command:
+
+```bash
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "\
+  tmux new-session -d -s openseeker-20260610-deepseek-teacher-10 \
+  \"bash -lc 'cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate --count 10 --seed-file data/seeds/wikidata_seed_sample.jsonl --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/deepseek-teacher-10-20260610 --teacher-backend openai-compatible --teacher-base-url https://api.deepseek.com --teacher-model deepseek-v4-pro --teacher-api-key-env DEEPSEEK_API_KEY 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/deepseek-teacher-10-20260610.log'\""
+```
+
+Monitoring:
+
+```bash
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
+  tmux list-sessions
+  tail -n 80 /data/wzl/OpenSeeker-AgentDataFactory/logs/deepseek-teacher-10-20260610.log
+  cat /data/wzl/OpenSeeker-AgentDataFactory/results/deepseek-teacher-10-20260610/summary.csv
+  ls -lah /data/wzl/OpenSeeker-AgentDataFactory/results/deepseek-teacher-10-20260610
+'"
+```

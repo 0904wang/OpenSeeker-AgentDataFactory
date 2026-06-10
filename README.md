@@ -99,6 +99,23 @@ python -m openseeker_factory.cli generate \
 
 `data/seeds/wikidata_seed_sample.jsonl` is a small format example. For a real 5k baseline, replace it with a Wikidata-derived seed file and keep the same schema.
 
+## Optional Teacher Backend
+
+`generate` can also draft tasks through an OpenAI-compatible endpoint. For DeepSeek official API:
+
+```bash
+python -m openseeker_factory.cli generate \
+  --count 10 \
+  --seed-file data/seeds/wikidata_seed_sample.jsonl \
+  --out-dir outputs/teacher-demo \
+  --teacher-backend openai-compatible \
+  --teacher-base-url https://api.deepseek.com \
+  --teacher-model deepseek-v4-pro \
+  --teacher-api-key-env DEEPSEEK_API_KEY
+```
+
+Set the API key in the environment variable named by `--teacher-api-key-env`.
+
 ## Data Schema
 
 Every sample uses this JSONL contract:

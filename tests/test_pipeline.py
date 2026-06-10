@@ -4,6 +4,25 @@ from openseeker_factory.pipeline import AgentDataFactory
 from openseeker_factory.schema import AgentDataSample
 
 
+class FakeTeacherBackend:
+    name = "fake-teacher"
+
+    def complete_json(self, messages):
+        return {
+            "question": "Teacher: which country contains Ada Lovelace's birthplace?",
+            "difficulty": "hard",
+            "trajectory": [
+                "Thought: Use the teacher-provided tool plan.",
+                "Action: wikidata_lookup[Ada Lovelace birthplace]",
+                "Observation: London",
+                "Thought: Resolve London to its country.",
+                "Action: wikidata_lookup[London country]",
+                "Observation: United Kingdom",
+                "Final: United Kingdom",
+            ],
+        }
+
+
 def test_factory_generates_verified_samples_for_three_task_types():
     factory = AgentDataFactory.from_demo_knowledge_graph()
 
@@ -90,3 +109,20 @@ def test_factory_loads_seed_file_and_repeats_it_to_requested_count():
         "wikidata-curie-2",
         "wikidata-ada-3",
     ]
+
+
+def test_factory_uses_teacher_backend_draft_when_provided():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].question == (
+        "Teacher: which country contains Ada Lovelace's birthplace?"
+    )
+    assert accepted[0].difficulty == "hard"
+    assert accepted[0].trajectory[0] == "Thought: Use the teacher-provided tool plan."
+    assert accepted[0].source["teacher_backend"] == "fake-teacher"
