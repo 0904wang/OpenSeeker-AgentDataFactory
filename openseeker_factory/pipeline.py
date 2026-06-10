@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -195,15 +196,42 @@ class AgentDataFactory:
         count: int,
         strategy: str = "evol_instruct",
         progress_callback: Callable[[int, int, AgentDataSample], None] | None = None,
+        teacher_concurrency: int = 1,
     ) -> tuple[list[AgentDataSample], list[AgentDataSample], QualityMetrics]:
+        if teacher_concurrency < 1:
+            raise ValueError("teacher_concurrency must be positive")
         seeds = self.seed_expand(count=count)
-        samples: list[AgentDataSample] = []
-        for index, seed in enumerate(seeds, start=1):
+        total = len(seeds)
+
+        def build_sample(index: int, seed: SeedTask) -> tuple[int, AgentDataSample]:
             task = self.evolve_task(seed, strategy=strategy)
             sample = self.generate_trajectory(task)
-            samples.append(sample)
-            if progress_callback is not None:
-                progress_callback(index, len(seeds), sample)
+            return index, sample
+
+        if teacher_concurrency == 1:
+            samples: list[AgentDataSample] = []
+            for index, seed in enumerate(seeds, start=1):
+                _, sample = build_sample(index, seed)
+                samples.append(sample)
+                if progress_callback is not None:
+                    progress_callback(index, total, sample)
+            return self.verify_and_filter(samples)
+
+        samples_by_index: dict[int, AgentDataSample] = {}
+        with ThreadPoolExecutor(max_workers=teacher_concurrency) as executor:
+            futures = {
+                executor.submit(build_sample, index, seed): index
+                for index, seed in enumerate(seeds, start=1)
+            }
+            completed = 0
+            for future in as_completed(futures):
+                index, sample = future.result()
+                samples_by_index[index] = sample
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(completed, total, sample)
+
+        samples = [samples_by_index[index] for index in range(1, total + 1)]
         return self.verify_and_filter(samples)
 
     def seed_expand(self, count: int) -> list[SeedTask]:

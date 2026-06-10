@@ -144,6 +144,8 @@ def test_cli_generate_can_use_openai_compatible_teacher_backend(tmp_path: Path):
                 "fake-model",
                 "--teacher-api-key-env",
                 "TEST_TEACHER_API_KEY",
+                "--teacher-concurrency",
+                "2",
             ],
             check=True,
             capture_output=True,

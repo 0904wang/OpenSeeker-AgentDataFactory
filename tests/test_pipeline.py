@@ -1,4 +1,6 @@
 from pathlib import Path
+from threading import Lock
+from time import sleep
 
 from openseeker_factory.pipeline import AgentDataFactory
 from openseeker_factory.schema import AgentDataSample
@@ -86,6 +88,45 @@ class FakeRepeatedQuestionTeacherBackend:
                 f"Final: {answer}",
             ],
         }
+
+
+class FakeSlowTeacherBackend:
+    name = "fake-slow-teacher"
+
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+        self.lock = Lock()
+
+    def complete_json(self, messages):
+        import json
+
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            payload = json.loads(messages[-1]["content"])
+            variant_index = int(str(payload["seed_id"]).rsplit("-", 1)[1])
+            sleep(0.01 * (7 - variant_index))
+            entity = payload["entity"]
+            intermediate = payload["intermediate"]
+            answer = payload["answer"]
+            return {
+                "question": f"Which country is tied to {entity}'s birthplace?",
+                "difficulty": "medium",
+                "trajectory": [
+                    "Thought: Use the lookup trajectory.",
+                    f"Action: wikidata_lookup[{entity} birthplace]",
+                    f"Observation: {intermediate}",
+                    "Thought: Resolve country.",
+                    f"Action: wikidata_lookup[{intermediate} country]",
+                    f"Observation: {answer}",
+                    f"Final: {answer}",
+                ],
+            }
+        finally:
+            with self.lock:
+                self.active -= 1
 
 
 def test_factory_generates_verified_samples_for_three_task_types():
@@ -286,3 +327,29 @@ def test_factory_rewrites_duplicate_teacher_questions_before_filtering():
         sample.verifier_result.checks["not_duplicate"] is True
         for sample in accepted
     )
+
+
+def test_factory_runs_teacher_backend_concurrently_when_requested():
+    teacher = FakeSlowTeacherBackend()
+    factory = AgentDataFactory.from_demo_knowledge_graph(teacher_backend=teacher)
+    progress_indices = []
+
+    accepted, rejected, metrics = factory.generate_verified(
+        count=6,
+        teacher_concurrency=4,
+        progress_callback=lambda index, total, sample: progress_indices.append(index),
+    )
+
+    assert len(accepted) == 6
+    assert rejected == []
+    assert metrics.accepted == 6
+    assert teacher.max_active > 1
+    assert progress_indices == [1, 2, 3, 4, 5, 6]
+    assert [sample.id for sample in accepted] == [
+        "task-ada-1",
+        "task-curie-2",
+        "task-turing-3",
+        "task-ada-4",
+        "task-curie-5",
+        "task-turing-6",
+    ]

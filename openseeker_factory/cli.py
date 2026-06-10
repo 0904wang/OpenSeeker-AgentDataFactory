@@ -71,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=30.0,
         help="Request timeout for the teacher backend.",
     )
+    generate.add_argument(
+        "--teacher-concurrency",
+        type=int,
+        default=1,
+        help="Maximum concurrent teacher requests.",
+    )
     return parser
 
 
@@ -115,10 +121,14 @@ def run_generate(
     out_dir: Path,
     strategy: str,
     teacher_backend,
+    teacher_concurrency: int,
 ):
     factory = AgentDataFactory.from_seed_file(seed_file, teacher_backend=teacher_backend)
     accepted, rejected, metrics = factory.generate_verified(
-        count=count, strategy=strategy, progress_callback=print_progress
+        count=count,
+        strategy=strategy,
+        progress_callback=print_progress,
+        teacher_concurrency=teacher_concurrency,
     )
     export_artifacts(factory, accepted, rejected, metrics, out_dir)
     print(
@@ -147,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             args.out_dir,
             args.strategy,
             teacher_backend,
+            args.teacher_concurrency,
         )
     raise ValueError(f"Unknown command: {args.command}")
 
