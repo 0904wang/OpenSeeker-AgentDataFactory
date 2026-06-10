@@ -44,6 +44,25 @@ class FakeFailingTeacherBackend:
         raise RuntimeError("teacher timed out")
 
 
+class FakeInvalidDifficultyTeacherBackend:
+    name = "fake-invalid-difficulty"
+
+    def complete_json(self, messages):
+        return {
+            "question": "Teacher drafted question with invalid difficulty?",
+            "difficulty": "intermediate",
+            "trajectory": [
+                "Thought: Use the teacher-provided tool plan.",
+                "Action: wikidata_lookup[Ada Lovelace birthplace]",
+                "Observation: London",
+                "Thought: Resolve London to its country.",
+                "Action: wikidata_lookup[London country]",
+                "Observation: United Kingdom",
+                "Final: United Kingdom",
+            ],
+        }
+
+
 def test_factory_generates_verified_samples_for_three_task_types():
     factory = AgentDataFactory.from_demo_knowledge_graph()
 
@@ -183,3 +202,16 @@ def test_factory_falls_back_when_teacher_backend_fails():
     assert accepted[0].question.startswith("Answer by chaining facts")
     assert accepted[0].source["teacher_backend"] == "fake-failing-teacher"
     assert accepted[0].source["teacher_backend_error"] == "teacher timed out"
+
+
+def test_factory_normalizes_invalid_teacher_difficulty():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeInvalidDifficultyTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].difficulty == "medium"
+    assert accepted[0].source["teacher_difficulty_raw"] == "intermediate"

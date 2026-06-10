@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from openseeker_factory.backends import ChatBackend
-from openseeker_factory.schema import AgentDataSample, ToolCall, VerifierResult
+from openseeker_factory.schema import (
+    DIFFICULTIES,
+    AgentDataSample,
+    ToolCall,
+    VerifierResult,
+)
 
 
 @dataclass(eq=True)
@@ -282,7 +287,10 @@ class AgentDataFactory:
                 task.source["teacher_backend_error"] = str(exc)
                 return task
             question = str(draft.get("question", question))
-            difficulty = str(draft.get("difficulty", "medium"))
+            difficulty_raw = str(draft.get("difficulty", "medium")).lower().strip()
+            difficulty = difficulty_raw if difficulty_raw in DIFFICULTIES else "medium"
+            if difficulty != difficulty_raw:
+                task.source["teacher_difficulty_raw"] = difficulty_raw
             trajectory_draft = [str(item) for item in draft.get("trajectory", []) if str(item)]
             task.question = question
             task.difficulty = difficulty
