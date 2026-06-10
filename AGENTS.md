@@ -38,7 +38,7 @@ scheduler: "tmux"
 code_sync: "explicit git pull --ff-only or narrow file sync approved by the user"
 branch: "main"
 dry_run_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && PYTHONNOUSERSITE=1 python -m pytest && PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count 3 --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/dry-run"
-launch_command: "cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && tmux new-session -d -s openseeker-YYYYMMDD-task-name \"CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log\""
+launch_command: "tmux new-session -d -s openseeker-YYYYMMDD-task-name \"bash -lc 'cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log'\""
 log_path: "/data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log"
 results_dir: "/data/wzl/OpenSeeker-AgentDataFactory/results/task-name"
 monitor_commands:
@@ -375,12 +375,9 @@ Only after user approval:
 Example launch pattern after user approval:
 
 ```bash
-ssh user@ssh-22.e6.luyouxia.net -p 29509 '\
-  cd /data/wzl/OpenSeeker-AgentDataFactory/repo && \
-  source /home/user/anaconda3/etc/profile.d/conda.sh && \
-  conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && \
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "\
   tmux new-session -d -s openseeker-YYYYMMDD-task-name \
-  "CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log"'
+  \"bash -lc 'cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli demo --count N --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/task-name 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/task-name.log'\""
 ```
 
 ## tmux Rules

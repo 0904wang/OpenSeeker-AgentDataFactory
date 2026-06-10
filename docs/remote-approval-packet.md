@@ -201,14 +201,9 @@ checkpoint_path: not applicable
 Command:
 
 ```bash
-ssh user@ssh-22.e6.luyouxia.net -p 29509 "bash -lc '
-  set -e
-  cd /data/wzl/OpenSeeker-AgentDataFactory/repo
-  source /home/user/anaconda3/etc/profile.d/conda.sh
-  conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory
+ssh user@ssh-22.e6.luyouxia.net -p 29509 "\
   tmux new-session -d -s openseeker-20260609-baseline-5k \
-  \"CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate --count 5000 --seed-file data/seeds/wikidata_seed_sample.jsonl --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/baseline-5k.log\"
-'"
+  \"bash -lc 'cd /data/wzl/OpenSeeker-AgentDataFactory/repo && source /home/user/anaconda3/etc/profile.d/conda.sh && conda activate /data/wzl/OpenSeeker-AgentDataFactory/.conda-envs/openseeker-datafactory && CUDA_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate --count 5000 --seed-file data/seeds/wikidata_seed_sample.jsonl --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k 2>&1 | tee /data/wzl/OpenSeeker-AgentDataFactory/logs/baseline-5k.log'\""
 ```
 
 Monitoring:
