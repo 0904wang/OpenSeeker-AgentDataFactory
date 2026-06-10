@@ -111,6 +111,7 @@ def test_cli_generate_uses_seed_file_and_writes_baseline_artifacts(tmp_path: Pat
 
     assert "accepted=5 rejected=0" in result.stdout
     assert (out_dir / "samples.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert (out_dir / "raw_generations.jsonl").read_text(encoding="utf-8").count("\n") == 5
     assert (out_dir / "sft_conversations.jsonl").exists()
     assert (out_dir / "rl_rewards.jsonl").exists()
     assert (out_dir / "trace.jsonl").exists()

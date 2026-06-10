@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from openseeker_factory.backends import build_chat_backend
@@ -124,12 +125,22 @@ def run_generate(
     teacher_concurrency: int,
 ):
     factory = AgentDataFactory.from_seed_file(seed_file, teacher_backend=teacher_backend)
-    accepted, rejected, metrics = factory.generate_verified(
-        count=count,
-        strategy=strategy,
-        progress_callback=print_progress,
-        teacher_concurrency=teacher_concurrency,
-    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw_generations_path = out_dir / "raw_generations.jsonl"
+
+    with raw_generations_path.open("w", encoding="utf-8") as raw_handle:
+
+        def stream_progress(index: int, total: int, sample: AgentDataSample) -> None:
+            raw_handle.write(json.dumps(sample.to_json_dict(), ensure_ascii=False) + "\n")
+            raw_handle.flush()
+            print_progress(index, total, sample)
+
+        accepted, rejected, metrics = factory.generate_verified(
+            count=count,
+            strategy=strategy,
+            progress_callback=stream_progress,
+            teacher_concurrency=teacher_concurrency,
+        )
     export_artifacts(factory, accepted, rejected, metrics, out_dir)
     print(
         f"OpenSeeker AgentDataFactory generation complete: "
