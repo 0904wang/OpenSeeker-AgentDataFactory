@@ -1,6 +1,7 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from urllib import request
 
 from openseeker_factory.backends import OpenAICompatibleChatBackend
 
@@ -88,3 +89,35 @@ def test_openai_compatible_backend_strips_api_key_line_endings():
         thread.join(timeout=2)
 
     assert _ChatHandler.requests[0]["authorization"] == "Bearer test-key"
+
+
+def test_openai_compatible_backend_wraps_timeout_without_leaking_key(monkeypatch):
+    class TimeoutResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            raise TimeoutError("raw timeout")
+
+    def fake_urlopen(req, timeout):
+        return TimeoutResponse()
+
+    monkeypatch.setattr(request, "urlopen", fake_urlopen)
+    backend = OpenAICompatibleChatBackend(
+        base_url="https://api.example.test/v1",
+        model="fake-model",
+        api_key="test-secret",
+    )
+
+    try:
+        backend.complete_json([{"role": "user", "content": "Draft one task."}])
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert "timed out" in message
+    assert "test-secret" not in message

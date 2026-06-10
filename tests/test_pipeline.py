@@ -37,6 +37,13 @@ class FakeInvalidTrajectoryTeacherBackend:
         }
 
 
+class FakeFailingTeacherBackend:
+    name = "fake-failing-teacher"
+
+    def complete_json(self, messages):
+        raise RuntimeError("teacher timed out")
+
+
 def test_factory_generates_verified_samples_for_three_task_types():
     factory = AgentDataFactory.from_demo_knowledge_graph()
 
@@ -162,3 +169,17 @@ def test_factory_repairs_invalid_teacher_trajectory_with_deterministic_react():
         "Final: United Kingdom",
     ]
     assert accepted[0].source["teacher_trajectory_repaired"] is True
+
+
+def test_factory_falls_back_when_teacher_backend_fails():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeFailingTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].question.startswith("Answer by chaining facts")
+    assert accepted[0].source["teacher_backend"] == "fake-failing-teacher"
+    assert accepted[0].source["teacher_backend_error"] == "teacher timed out"

@@ -47,6 +47,10 @@ class OpenAICompatibleChatBackend:
                 raw = resp.read()
         except error.URLError as exc:
             raise RuntimeError(f"failed to call OpenAI-compatible backend: {exc}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "failed to call OpenAI-compatible backend: request timed out"
+            ) from exc
         except ValueError as exc:
             raise RuntimeError(
                 "failed to call OpenAI-compatible backend: invalid request headers"

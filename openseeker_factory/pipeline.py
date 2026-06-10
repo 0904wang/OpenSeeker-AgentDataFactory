@@ -246,43 +246,47 @@ class AgentDataFactory:
             trajectory_draft=None,
         )
         if self._teacher_backend is not None:
-            draft = self._teacher_backend.complete_json(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Return only JSON with question, difficulty, and trajectory. "
-                            "The trajectory must be a list of ReAct strings using this exact style: "
-                            "Thought: ..., Action: wikidata_lookup[...], Observation: ..., Final: ..."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "seed_id": seed.id,
-                                "task_type": seed.task_type,
-                                "entity": seed.entity,
-                                "relation": seed.relation,
-                                "intermediate": seed.intermediate,
-                                "answer": seed.answer,
-                                "evidence": seed.evidence,
-                                "noisy_context": seed.noisy_context,
-                                "strategy": strategy,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                ]
-            )
+            task.source = dict(task.source)
+            task.source["teacher_backend"] = self._teacher_backend.name
+            try:
+                draft = self._teacher_backend.complete_json(
+                    [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Return only JSON with question, difficulty, and trajectory. "
+                                "The trajectory must be a list of ReAct strings using this exact style: "
+                                "Thought: ..., Action: wikidata_lookup[...], Observation: ..., Final: ..."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "seed_id": seed.id,
+                                    "task_type": seed.task_type,
+                                    "entity": seed.entity,
+                                    "relation": seed.relation,
+                                    "intermediate": seed.intermediate,
+                                    "answer": seed.answer,
+                                    "evidence": seed.evidence,
+                                    "noisy_context": seed.noisy_context,
+                                    "strategy": strategy,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    ]
+                )
+            except Exception as exc:
+                task.source["teacher_backend_error"] = str(exc)
+                return task
             question = str(draft.get("question", question))
             difficulty = str(draft.get("difficulty", "medium"))
             trajectory_draft = [str(item) for item in draft.get("trajectory", []) if str(item)]
             task.question = question
             task.difficulty = difficulty
             task.trajectory_draft = trajectory_draft or None
-            task.source = dict(task.source)
-            task.source["teacher_backend"] = self._teacher_backend.name
         return task
 
     def _build_question(self, seed: SeedTask) -> str:
