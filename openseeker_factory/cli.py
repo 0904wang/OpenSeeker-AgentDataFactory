@@ -7,6 +7,7 @@ from pathlib import Path
 from openseeker_factory.backends import build_chat_backend
 from openseeker_factory.pipeline import AgentDataFactory
 from openseeker_factory.schema import AgentDataSample
+from openseeker_factory.seed_bank import build_wikidata_seed_rows, write_seed_jsonl
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,6 +79,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Maximum concurrent teacher requests.",
     )
+    build_seeds = subparsers.add_parser(
+        "build-seeds", help="Build a reproducible expanded Wikidata-style seed file."
+    )
+    build_seeds.add_argument(
+        "--out-file",
+        type=Path,
+        default=Path("data/seeds/wikidata_seed_expanded.jsonl"),
+        help="Output JSONL seed path.",
+    )
+    build_seeds.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional maximum number of seed rows to write.",
+    )
     return parser
 
 
@@ -112,6 +128,15 @@ def run_demo(count: int, out_dir: Path) -> int:
         f"OpenSeeker AgentDataFactory demo complete: "
         f"accepted={metrics.accepted} rejected={metrics.rejected} "
         f"out_dir={out_dir}"
+    )
+    return 0
+
+
+def run_build_seeds(out_file: Path, limit: int | None) -> int:
+    rows = build_wikidata_seed_rows(limit=limit)
+    write_seed_jsonl(rows, out_file)
+    print(
+        f"OpenSeeker seed build complete: rows={len(rows)} out_file={out_file}"
     )
     return 0
 
@@ -154,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "demo":
         return run_demo(args.count, args.out_dir)
+    if args.command == "build-seeds":
+        return run_build_seeds(args.out_file, args.limit)
     if args.command == "generate":
         teacher_backend = build_chat_backend(
             backend=args.teacher_backend,

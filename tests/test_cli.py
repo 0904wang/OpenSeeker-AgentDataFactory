@@ -118,6 +118,27 @@ def test_cli_generate_uses_seed_file_and_writes_baseline_artifacts(tmp_path: Pat
     assert "5,5,0" in (out_dir / "summary.csv").read_text(encoding="utf-8")
 
 
+def test_cli_build_seeds_writes_expanded_seed_file(tmp_path: Path):
+    out_file = tmp_path / "expanded.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "build-seeds",
+            "--out-file",
+            str(out_file),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "OpenSeeker seed build complete" in result.stdout
+    assert out_file.read_text(encoding="utf-8").count("\n") >= 90
+
+
 def test_cli_generate_can_use_openai_compatible_teacher_backend(tmp_path: Path):
     server = ThreadingHTTPServer(("127.0.0.1", 0), _TeacherHandler)
     thread = Thread(target=server.serve_forever, daemon=True)
