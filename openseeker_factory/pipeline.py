@@ -4,7 +4,7 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from openseeker_factory.backends import ChatBackend
 from openseeker_factory.schema import (
@@ -52,6 +52,12 @@ class QualityMetrics:
     evidence_hit_rate: float
     tool_success_rate: float
     trajectory_valid_rate: float
+    teacher_attempted: int
+    teacher_succeeded: int
+    teacher_failed: int
+    teacher_fallback_rate: float
+    teacher_trajectory_repaired: int
+    teacher_difficulty_normalized: int
     manual_sample_pass_rate: float | None = None
 
     def to_row(self) -> dict[str, Any]:
@@ -64,6 +70,12 @@ class QualityMetrics:
             "evidence_hit_rate": self.evidence_hit_rate,
             "tool_success_rate": self.tool_success_rate,
             "trajectory_valid_rate": self.trajectory_valid_rate,
+            "teacher_attempted": self.teacher_attempted,
+            "teacher_succeeded": self.teacher_succeeded,
+            "teacher_failed": self.teacher_failed,
+            "teacher_fallback_rate": self.teacher_fallback_rate,
+            "teacher_trajectory_repaired": self.teacher_trajectory_repaired,
+            "teacher_difficulty_normalized": self.teacher_difficulty_normalized,
             "manual_sample_pass_rate": self.manual_sample_pass_rate,
         }
 
@@ -179,11 +191,19 @@ class AgentDataFactory:
         )
 
     def generate_verified(
-        self, count: int, strategy: str = "evol_instruct"
+        self,
+        count: int,
+        strategy: str = "evol_instruct",
+        progress_callback: Callable[[int, int, AgentDataSample], None] | None = None,
     ) -> tuple[list[AgentDataSample], list[AgentDataSample], QualityMetrics]:
         seeds = self.seed_expand(count=count)
-        tasks = [self.evolve_task(seed, strategy=strategy) for seed in seeds]
-        samples = [self.generate_trajectory(task) for task in tasks]
+        samples: list[AgentDataSample] = []
+        for index, seed in enumerate(seeds, start=1):
+            task = self.evolve_task(seed, strategy=strategy)
+            sample = self.generate_trajectory(task)
+            samples.append(sample)
+            if progress_callback is not None:
+                progress_callback(index, len(seeds), sample)
         return self.verify_and_filter(samples)
 
     def seed_expand(self, count: int) -> list[SeedTask]:
@@ -513,9 +533,21 @@ class AgentDataFactory:
                 evidence_hit_rate=0.0,
                 tool_success_rate=0.0,
                 trajectory_valid_rate=0.0,
+                teacher_attempted=0,
+                teacher_succeeded=0,
+                teacher_failed=0,
+                teacher_fallback_rate=0.0,
+                teacher_trajectory_repaired=0,
+                teacher_difficulty_normalized=0,
             )
 
         verified = accepted + rejected
+        teacher_attempted = sum(
+            1 for sample in verified if "teacher_backend" in sample.source
+        )
+        teacher_failed = sum(
+            1 for sample in verified if "teacher_backend_error" in sample.source
+        )
 
         def rate(check_name: str) -> float:
             passed = sum(
@@ -534,6 +566,22 @@ class AgentDataFactory:
             evidence_hit_rate=rate("evidence_coverage"),
             tool_success_rate=rate("tool_success"),
             trajectory_valid_rate=rate("trajectory_valid"),
+            teacher_attempted=teacher_attempted,
+            teacher_succeeded=teacher_attempted - teacher_failed,
+            teacher_failed=teacher_failed,
+            teacher_fallback_rate=(
+                round(teacher_failed / teacher_attempted, 4)
+                if teacher_attempted
+                else 0.0
+            ),
+            teacher_trajectory_repaired=sum(
+                1
+                for sample in verified
+                if sample.source.get("teacher_trajectory_repaired")
+            ),
+            teacher_difficulty_normalized=sum(
+                1 for sample in verified if "teacher_difficulty_raw" in sample.source
+            ),
         )
 
     def _write_jsonl(self, rows: Iterable[dict[str, Any]], path: Path) -> None:

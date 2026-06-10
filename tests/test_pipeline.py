@@ -204,6 +204,24 @@ def test_factory_falls_back_when_teacher_backend_fails():
     assert accepted[0].source["teacher_backend_error"] == "teacher timed out"
 
 
+def test_factory_metrics_include_teacher_fallback_counts():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeFailingTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=2)
+    row = metrics.to_row()
+
+    assert len(accepted) == 2
+    assert rejected == []
+    assert row["teacher_attempted"] == 2
+    assert row["teacher_succeeded"] == 0
+    assert row["teacher_failed"] == 2
+    assert row["teacher_fallback_rate"] == 1.0
+    assert row["teacher_trajectory_repaired"] == 0
+    assert row["teacher_difficulty_normalized"] == 0
+
+
 def test_factory_normalizes_invalid_teacher_difficulty():
     factory = AgentDataFactory.from_demo_knowledge_graph(
         teacher_backend=FakeInvalidDifficultyTeacherBackend()

@@ -155,6 +155,10 @@ def test_cli_generate_can_use_openai_compatible_teacher_backend(tmp_path: Path):
         thread.join(timeout=2)
 
     assert "accepted=1 rejected=0" in result.stdout
+    assert (
+        "progress 1/1 id=wikidata-ada-1 teacher_status=teacher accepted=pending"
+        in result.stdout
+    )
     first = json.loads((out_dir / "samples.jsonl").read_text(encoding="utf-8"))
     assert first["question"] == "CLI teacher generated question?"
     assert first["difficulty"] == "hard"

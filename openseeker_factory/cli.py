@@ -5,6 +5,7 @@ from pathlib import Path
 
 from openseeker_factory.backends import build_chat_backend
 from openseeker_factory.pipeline import AgentDataFactory
+from openseeker_factory.schema import AgentDataSample
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +82,20 @@ def export_artifacts(factory: AgentDataFactory, accepted, rejected, metrics, out
     factory.export_summary(metrics, out_dir / "summary.csv")
 
 
+def print_progress(index: int, total: int, sample: AgentDataSample) -> None:
+    if "teacher_backend_error" in sample.source:
+        teacher_status = "fallback"
+    elif "teacher_backend" in sample.source:
+        teacher_status = "teacher"
+    else:
+        teacher_status = "deterministic"
+    print(
+        f"progress {index}/{total} id={sample.id} "
+        f"teacher_status={teacher_status} accepted=pending",
+        flush=True,
+    )
+
+
 def run_demo(count: int, out_dir: Path) -> int:
     factory = AgentDataFactory.from_demo_knowledge_graph()
     accepted, rejected, metrics = factory.generate_verified(count=count)
@@ -103,7 +118,7 @@ def run_generate(
 ):
     factory = AgentDataFactory.from_seed_file(seed_file, teacher_backend=teacher_backend)
     accepted, rejected, metrics = factory.generate_verified(
-        count=count, strategy=strategy
+        count=count, strategy=strategy, progress_callback=print_progress
     )
     export_artifacts(factory, accepted, rejected, metrics, out_dir)
     print(
