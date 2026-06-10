@@ -22,6 +22,9 @@ class OpenAICompatibleChatBackend:
     timeout_s: float = 30.0
     name: str = "openai-compatible"
 
+    def __post_init__(self) -> None:
+        self.api_key = self.api_key.strip()
+
     def complete_json(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         payload = {
             "model": self.model,
@@ -44,6 +47,10 @@ class OpenAICompatibleChatBackend:
                 raw = resp.read()
         except error.URLError as exc:
             raise RuntimeError(f"failed to call OpenAI-compatible backend: {exc}") from exc
+        except ValueError as exc:
+            raise RuntimeError(
+                "failed to call OpenAI-compatible backend: invalid request headers"
+            ) from exc
 
         response = json.loads(raw.decode("utf-8"))
         try:

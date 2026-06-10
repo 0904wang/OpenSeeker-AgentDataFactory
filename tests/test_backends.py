@@ -67,3 +67,24 @@ def test_openai_compatible_backend_posts_chat_request_and_parses_json():
     assert _ChatHandler.requests[0]["path"] == "/v1/chat/completions"
     assert _ChatHandler.requests[0]["authorization"] == "Bearer test-key"
     assert _ChatHandler.requests[0]["body"]["model"] == "fake-model"
+
+
+def test_openai_compatible_backend_strips_api_key_line_endings():
+    _ChatHandler.requests = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _ChatHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        backend = OpenAICompatibleChatBackend(
+            base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            model="fake-model",
+            api_key="test-key\r\n",
+        )
+
+        backend.complete_json([{"role": "user", "content": "Draft one task."}])
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert _ChatHandler.requests[0]["authorization"] == "Bearer test-key"
