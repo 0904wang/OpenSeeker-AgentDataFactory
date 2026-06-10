@@ -23,6 +23,20 @@ class FakeTeacherBackend:
         }
 
 
+class FakeInvalidTrajectoryTeacherBackend:
+    name = "fake-invalid-trajectory"
+
+    def complete_json(self, messages):
+        return {
+            "question": "Teacher drafted question with invalid trajectory?",
+            "difficulty": "hard",
+            "trajectory": [
+                "Find Ada Lovelace's birthplace: London.",
+                "Find the country: United Kingdom.",
+            ],
+        }
+
+
 def test_factory_generates_verified_samples_for_three_task_types():
     factory = AgentDataFactory.from_demo_knowledge_graph()
 
@@ -126,3 +140,25 @@ def test_factory_uses_teacher_backend_draft_when_provided():
     assert accepted[0].difficulty == "hard"
     assert accepted[0].trajectory[0] == "Thought: Use the teacher-provided tool plan."
     assert accepted[0].source["teacher_backend"] == "fake-teacher"
+
+
+def test_factory_repairs_invalid_teacher_trajectory_with_deterministic_react():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeInvalidTrajectoryTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].question == "Teacher drafted question with invalid trajectory?"
+    assert accepted[0].trajectory == [
+        "Thought: Identify the entity's birthplace.",
+        "Action: wikidata_lookup[Ada Lovelace birthplace]",
+        "Observation: London",
+        "Thought: Resolve the country from the intermediate location.",
+        "Action: wikidata_lookup[London country]",
+        "Observation: United Kingdom",
+        "Final: United Kingdom",
+    ]
+    assert accepted[0].source["teacher_trajectory_repaired"] is True

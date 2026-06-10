@@ -251,8 +251,9 @@ class AgentDataFactory:
                     {
                         "role": "system",
                         "content": (
-                            "Return JSON with question, difficulty, and trajectory "
-                            "for a synthetic agent task."
+                            "Return only JSON with question, difficulty, and trajectory. "
+                            "The trajectory must be a list of ReAct strings using this exact style: "
+                            "Thought: ..., Action: wikidata_lookup[...], Observation: ..., Final: ..."
                         ),
                     },
                     {
@@ -315,17 +316,16 @@ class AgentDataFactory:
         return question
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
-        trajectory = task.trajectory_draft or [
-            "Thought: Identify the entity's birthplace.",
-            f"Action: wikidata_lookup[{task.tool_plan[0].query}]",
-            f"Observation: {task.tool_plan[0].result}",
-            "Thought: Resolve the country from the intermediate location.",
-            f"Action: wikidata_lookup[{task.tool_plan[1].query}]",
-            f"Observation: {task.tool_plan[1].result}",
-            f"Final: {task.answer}",
-        ]
-        if task.task_type == "noisy_context_retrieval_qa" and task.trajectory_draft is None:
-            trajectory.insert(0, "Thought: Discard context that is not evidence-bearing.")
+        source = dict(task.source)
+        default_trajectory = self._default_trajectory(task)
+        if task.trajectory_draft and self._is_react_trajectory(
+            task.trajectory_draft, task.answer
+        ):
+            trajectory = task.trajectory_draft
+        else:
+            trajectory = default_trajectory
+            if task.trajectory_draft:
+                source["teacher_trajectory_repaired"] = True
 
         return AgentDataSample(
             id=task.id,
@@ -337,8 +337,31 @@ class AgentDataFactory:
             trajectory=trajectory,
             verifier_result=VerifierResult(passed=False, checks={}, reasons=[]),
             difficulty=task.difficulty,
-            source=task.source,
+            source=source,
             quality_score=0.0,
+        )
+
+    def _default_trajectory(self, task: EvolvedTask) -> list[str]:
+        trajectory = [
+            "Thought: Identify the entity's birthplace.",
+            f"Action: wikidata_lookup[{task.tool_plan[0].query}]",
+            f"Observation: {task.tool_plan[0].result}",
+            "Thought: Resolve the country from the intermediate location.",
+            f"Action: wikidata_lookup[{task.tool_plan[1].query}]",
+            f"Observation: {task.tool_plan[1].result}",
+            f"Final: {task.answer}",
+        ]
+        if task.task_type == "noisy_context_retrieval_qa" and task.trajectory_draft is None:
+            trajectory.insert(0, "Thought: Discard context that is not evidence-bearing.")
+        return trajectory
+
+    def _is_react_trajectory(self, trajectory: list[str], answer: str) -> bool:
+        trajectory_text = " ".join(trajectory).lower()
+        return (
+            "thought:" in trajectory_text
+            and "action:" in trajectory_text
+            and "observation:" in trajectory_text
+            and f"final: {answer.lower()}" in trajectory_text
         )
 
     def verify_and_filter(
