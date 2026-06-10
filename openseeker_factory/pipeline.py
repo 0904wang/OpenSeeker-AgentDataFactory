@@ -409,7 +409,13 @@ class AgentDataFactory:
             normalized_question = " ".join(sample.question.lower().split())
             duplicate = normalized_question in seen_questions
             if duplicate:
-                duplicate_count += 1
+                sample = self._rewrite_duplicate_question(
+                    sample, duplicate_index=duplicate_count + 1
+                )
+                normalized_question = " ".join(sample.question.lower().split())
+                duplicate = normalized_question in seen_questions
+                if duplicate:
+                    duplicate_count += 1
             seen_questions.add(normalized_question)
 
             verified = self._verify_sample(sample, duplicate=duplicate)
@@ -420,6 +426,21 @@ class AgentDataFactory:
 
         metrics = self._build_metrics(rows, accepted, rejected, duplicate_count)
         return accepted, rejected, metrics
+
+    def _rewrite_duplicate_question(
+        self, sample: AgentDataSample, duplicate_index: int
+    ) -> AgentDataSample:
+        rewritten = AgentDataSample.from_json_dict(sample.to_json_dict())
+        seed_id = str(rewritten.source.get("seed_id", rewritten.id))
+        rewritten.source = dict(rewritten.source)
+        rewritten.source["duplicate_question_rewritten"] = True
+        rewritten.source["original_question"] = rewritten.question
+        rewritten.source["duplicate_rewrite_index"] = duplicate_index
+        rewritten.question = (
+            f"{rewritten.question} Disambiguate this sample with seed {seed_id} "
+            f"and sample id {rewritten.id}."
+        )
+        return rewritten
 
     def export_jsonl(self, samples: Iterable[AgentDataSample], path: Path) -> None:
         self._write_jsonl((sample.to_json_dict() for sample in samples), path)

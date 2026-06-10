@@ -63,6 +63,31 @@ class FakeInvalidDifficultyTeacherBackend:
         }
 
 
+class FakeRepeatedQuestionTeacherBackend:
+    name = "fake-repeated-question"
+
+    def complete_json(self, messages):
+        import json
+
+        payload = json.loads(messages[-1]["content"])
+        entity = payload["entity"]
+        intermediate = payload["intermediate"]
+        answer = payload["answer"]
+        return {
+            "question": "Which country is connected to the birthplace?",
+            "difficulty": "medium",
+            "trajectory": [
+                "Thought: Use the lookup trajectory.",
+                f"Action: wikidata_lookup[{entity} birthplace]",
+                f"Observation: {intermediate}",
+                "Thought: Resolve country.",
+                f"Action: wikidata_lookup[{intermediate} country]",
+                f"Observation: {answer}",
+                f"Final: {answer}",
+            ],
+        }
+
+
 def test_factory_generates_verified_samples_for_three_task_types():
     factory = AgentDataFactory.from_demo_knowledge_graph()
 
@@ -233,3 +258,31 @@ def test_factory_normalizes_invalid_teacher_difficulty():
     assert metrics.accepted == 1
     assert accepted[0].difficulty == "medium"
     assert accepted[0].source["teacher_difficulty_raw"] == "intermediate"
+
+
+def test_factory_rewrites_duplicate_teacher_questions_before_filtering():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeRepeatedQuestionTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=6)
+
+    assert len(accepted) == 6
+    assert rejected == []
+    assert metrics.accepted == 6
+    assert metrics.rejected == 0
+    assert metrics.dedup_rate == 1.0
+    assert len({sample.question for sample in accepted}) == 6
+    rewritten = [
+        sample for sample in accepted if sample.source.get("duplicate_question_rewritten")
+    ]
+    assert len(rewritten) == 5
+    assert all(
+        sample.source["original_question"]
+        == "Which country is connected to the birthplace?"
+        for sample in rewritten
+    )
+    assert all(
+        sample.verifier_result.checks["not_duplicate"] is True
+        for sample in accepted
+    )
