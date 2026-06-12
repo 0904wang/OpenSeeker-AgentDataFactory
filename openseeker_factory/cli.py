@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--count", type=int, default=3, help="Number of seed tasks.")
     demo.add_argument(
         "--data-version",
-        choices=["canonical-v3", "canonical-v4"],
+        choices=["canonical-v3", "canonical-v4", "canonical-v4-hard"],
         default="canonical-v3",
         help="Synthetic data contract to use.",
     )
@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     generate.add_argument(
         "--data-version",
-        choices=["canonical-v3", "canonical-v4"],
+        choices=["canonical-v3", "canonical-v4", "canonical-v4-hard"],
         default="canonical-v3",
         help="Synthetic data contract to use.",
     )

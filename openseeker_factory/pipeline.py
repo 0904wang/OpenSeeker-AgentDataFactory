@@ -19,7 +19,7 @@ from openseeker_factory.schema import (
 ACTION_QUERY_RE = re.compile(
     r"action\s*:\s*wikidata_lookup\s*\[([^\]]+)\]", re.IGNORECASE
 )
-DATA_VERSIONS = {"canonical-v3", "canonical-v4"}
+DATA_VERSIONS = {"canonical-v3", "canonical-v4", "canonical-v4-hard"}
 
 
 @dataclass(eq=True)
@@ -451,7 +451,7 @@ class AgentDataFactory:
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
         source["data_version"] = self._data_version
-        if self._data_version == "canonical-v4":
+        if self._uses_lookup_conditioning():
             source["observation_grounding"] = "provided_lookup_results"
             source["observation_conditioning"] = "lookup_result_block"
             source["lookup_observation_block"] = True
@@ -459,6 +459,15 @@ class AgentDataFactory:
             source["observation_grounding_policy"] = (
                 "observations_must_copy_provided_lookup_results"
             )
+            if self._data_version == "canonical-v4-hard":
+                source["heldout_profile"] = "v4-hard"
+                source["distractor_lookup_observation"] = True
+                source["difficulty_factors"] = [
+                    "alias_trap",
+                    "distractor_lookup",
+                    "noisy_context",
+                    "strict_observation_copy",
+                ]
         else:
             source["observation_grounding"] = "gold_tool_results"
             source["observation_grounding_policy"] = (
@@ -486,7 +495,9 @@ class AgentDataFactory:
         else:
             trajectory = task.trajectory_draft
         question = task.question
-        if self._data_version == "canonical-v4":
+        if self._data_version == "canonical-v4-hard":
+            question = self._with_hard_lookup_observation_block(question, task)
+        elif self._data_version == "canonical-v4":
             question = self._with_lookup_observation_block(question, task.tool_plan)
         question_repair_reason = self._question_repair_reason(question, task)
         if question_repair_reason is not None:
@@ -494,7 +505,9 @@ class AgentDataFactory:
             source["question_repair_reason"] = question_repair_reason
             source["original_question"] = question
             question = self._default_question_for_task(task)
-            if self._data_version == "canonical-v4":
+            if self._data_version == "canonical-v4-hard":
+                question = self._with_hard_lookup_observation_block(question, task)
+            elif self._data_version == "canonical-v4":
                 question = self._with_lookup_observation_block(question, task.tool_plan)
 
         return AgentDataSample(
@@ -506,10 +519,13 @@ class AgentDataFactory:
             tool_calls=list(task.tool_plan),
             trajectory=trajectory,
             verifier_result=VerifierResult(passed=False, checks={}, reasons=[]),
-            difficulty=task.difficulty,
+            difficulty="hard" if self._data_version == "canonical-v4-hard" else task.difficulty,
             source=source,
             quality_score=0.0,
         )
+
+    def _uses_lookup_conditioning(self) -> bool:
+        return self._data_version in {"canonical-v4", "canonical-v4-hard"}
 
     def _with_lookup_observation_block(
         self, question: str, tool_plan: Sequence[ToolCall]
@@ -527,6 +543,59 @@ class AgentDataFactory:
             ]
         )
         return f"{question}\n\n{block}"
+
+    def _with_hard_lookup_observation_block(
+        self, question: str, task: EvolvedTask
+    ) -> str:
+        correct_block = self._with_lookup_observation_block(
+            question, task.tool_plan
+        )
+        entity = self._entity_from_tool_plan(task)
+        alias_traps = self._alias_traps_for_answer(task.answer)
+        distractor = self._distractor_result_for_task(task)
+        hard_block = "\n".join(
+            [
+                "Hard heldout constraints:",
+                (
+                    "- Alias trap: the prompt may mention "
+                    f"{', '.join(alias_traps)}, but Observation lines must keep "
+                    "the exact lookup values above."
+                ),
+                "- Ignore noisy biographical context unless it supports the P19/P17 lookup chain.",
+                "",
+                "Distractor lookup observations:",
+                f"- wikidata_lookup[{entity}, P27] -> {distractor}",
+                "",
+                (
+                    "Do not copy distractor observations into the required "
+                    "P19/P17 trajectory."
+                ),
+            ]
+        )
+        return f"{correct_block}\n\n{hard_block}"
+
+    def _alias_traps_for_answer(self, answer: str) -> list[str]:
+        alias_map = {
+            "China": ["PRC", "People's Republic of China"],
+            "Czech Republic": ["Czechia"],
+            "United Kingdom": ["England", "UK"],
+            "United States": ["USA", "America"],
+        }
+        return alias_map.get(answer, [f"{answer} alias", "career-country clue"])
+
+    def _distractor_result_for_task(self, task: EvolvedTask) -> str:
+        distractors = {
+            "Poland": "France",
+            "United Kingdom": "United States",
+            "United States": "United Kingdom",
+            "Germany": "Austria",
+            "France": "Poland",
+            "China": "Japan",
+            "Czech Republic": "Germany",
+            "Italy": "France",
+            "Spain": "France",
+        }
+        return distractors.get(task.answer, "Unrelated country")
 
     def _conflict_types_for_task(self, task: EvolvedTask) -> list[str]:
         conflict_types = ["country_alias", "birthplace_alias"]
@@ -743,7 +812,10 @@ class AgentDataFactory:
                     "Observation lines must match lookup observations from "
                     "the evidence instead of memorized or localized facts."
                 )
-                if sample.source.get("data_version") == "canonical-v4":
+                if sample.source.get("data_version") in {
+                    "canonical-v4",
+                    "canonical-v4-hard",
+                }:
                     system_prompt = (
                         "You are a ReAct agent that must cite tool observations. "
                         "Actions must use the provided lookup schema, and "

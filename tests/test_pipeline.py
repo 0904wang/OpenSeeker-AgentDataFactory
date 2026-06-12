@@ -298,6 +298,30 @@ def test_factory_can_generate_canonical_v4_lookup_conditioned_sample():
     assert sample.verifier_result.checks["observation_faithfulness"] is True
 
 
+def test_factory_can_generate_canonical_v4_hard_heldout_sample():
+    factory = AgentDataFactory.from_demo_knowledge_graph(data_version="canonical-v4-hard")
+
+    accepted, rejected, _ = factory.generate_verified(count=1)
+
+    assert rejected == []
+    sample = accepted[0]
+    assert sample.difficulty == "hard"
+    assert sample.source["data_version"] == "canonical-v4-hard"
+    assert sample.source["heldout_profile"] == "v4-hard"
+    assert sample.source["observation_conditioning"] == "lookup_result_block"
+    assert sample.source["distractor_lookup_observation"] is True
+    assert "alias_trap" in sample.source["difficulty_factors"]
+    assert "distractor_lookup" in sample.source["difficulty_factors"]
+    assert "strict_observation_copy" in sample.source["difficulty_factors"]
+    assert "Available lookup observations:" in sample.question
+    assert "- wikidata_lookup[Ada Lovelace, P19] -> London" in sample.question
+    assert "- wikidata_lookup[London, P17] -> United Kingdom" in sample.question
+    assert "Distractor lookup observations:" in sample.question
+    assert "wikidata_lookup[Ada Lovelace, P27]" in sample.question
+    assert "Do not copy distractor observations" in sample.question
+    assert sample.verifier_result.checks["observation_faithfulness"] is True
+
+
 def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
     factory = AgentDataFactory.from_demo_knowledge_graph()
     task = factory.evolve_task(factory.seed_expand(count=1)[0])
