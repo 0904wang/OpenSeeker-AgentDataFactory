@@ -322,6 +322,33 @@ def test_factory_can_generate_canonical_v4_hard_heldout_sample():
     assert sample.verifier_result.checks["observation_faithfulness"] is True
 
 
+def test_factory_can_generate_canonical_v5_blind_hard_heldout_sample():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        data_version="canonical-v5-blind-hard"
+    )
+
+    accepted, rejected, _ = factory.generate_verified(count=1)
+
+    assert rejected == []
+    sample = accepted[0]
+    assert sample.difficulty == "hard"
+    assert sample.source["data_version"] == "canonical-v5-blind-hard"
+    assert sample.source["heldout_profile"] == "v5-blind-hard"
+    assert sample.source["observation_conditioning"] == "blind_tool_generation"
+    assert sample.source["lookup_observation_block"] is False
+    assert sample.source["distractor_lookup_observation"] is False
+    assert "blind_observation_generation" in sample.source["difficulty_factors"]
+    assert "strict_tool_schema" in sample.source["difficulty_factors"]
+    assert "Available lookup observations:" not in sample.question
+    assert "-> London" not in sample.question
+    assert "Use ReAct steps with wikidata_lookup[entity, P19]" in sample.question
+    assert "then wikidata_lookup[birthplace, P17]" in sample.question
+    assert "Ada Lovelace" in sample.question
+    assert "Alias trap:" in sample.question
+    assert "Noisy context:" in sample.question
+    assert sample.verifier_result.checks["observation_faithfulness"] is True
+
+
 def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
     factory = AgentDataFactory.from_demo_knowledge_graph()
     task = factory.evolve_task(factory.seed_expand(count=1)[0])

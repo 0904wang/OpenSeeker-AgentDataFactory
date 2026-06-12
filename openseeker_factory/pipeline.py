@@ -19,7 +19,12 @@ from openseeker_factory.schema import (
 ACTION_QUERY_RE = re.compile(
     r"action\s*:\s*wikidata_lookup\s*\[([^\]]+)\]", re.IGNORECASE
 )
-DATA_VERSIONS = {"canonical-v3", "canonical-v4", "canonical-v4-hard"}
+DATA_VERSIONS = {
+    "canonical-v3",
+    "canonical-v4",
+    "canonical-v4-hard",
+    "canonical-v5-blind-hard",
+}
 
 
 @dataclass(eq=True)
@@ -451,7 +456,23 @@ class AgentDataFactory:
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
         source["data_version"] = self._data_version
-        if self._uses_lookup_conditioning():
+        if self._data_version == "canonical-v5-blind-hard":
+            source["observation_grounding"] = "gold_tool_results"
+            source["observation_conditioning"] = "blind_tool_generation"
+            source["lookup_observation_block"] = False
+            source["distractor_lookup_observation"] = False
+            source["heldout_profile"] = "v5-blind-hard"
+            source["conflict_types"] = self._conflict_types_for_task(task)
+            source["observation_grounding_policy"] = (
+                "model_must_generate_tool_calls_without_observation_block"
+            )
+            source["difficulty_factors"] = [
+                "blind_observation_generation",
+                "alias_trap",
+                "noisy_context",
+                "strict_tool_schema",
+            ]
+        elif self._uses_lookup_conditioning():
             source["observation_grounding"] = "provided_lookup_results"
             source["observation_conditioning"] = "lookup_result_block"
             source["lookup_observation_block"] = True
@@ -495,7 +516,9 @@ class AgentDataFactory:
         else:
             trajectory = task.trajectory_draft
         question = task.question
-        if self._data_version == "canonical-v4-hard":
+        if self._data_version == "canonical-v5-blind-hard":
+            question = self._with_blind_hard_prompt(question, task)
+        elif self._data_version == "canonical-v4-hard":
             question = self._with_hard_lookup_observation_block(question, task)
         elif self._data_version == "canonical-v4":
             question = self._with_lookup_observation_block(question, task.tool_plan)
@@ -505,7 +528,9 @@ class AgentDataFactory:
             source["question_repair_reason"] = question_repair_reason
             source["original_question"] = question
             question = self._default_question_for_task(task)
-            if self._data_version == "canonical-v4-hard":
+            if self._data_version == "canonical-v5-blind-hard":
+                question = self._with_blind_hard_prompt(question, task)
+            elif self._data_version == "canonical-v4-hard":
                 question = self._with_hard_lookup_observation_block(question, task)
             elif self._data_version == "canonical-v4":
                 question = self._with_lookup_observation_block(question, task.tool_plan)
@@ -519,7 +544,14 @@ class AgentDataFactory:
             tool_calls=list(task.tool_plan),
             trajectory=trajectory,
             verifier_result=VerifierResult(passed=False, checks={}, reasons=[]),
-            difficulty="hard" if self._data_version == "canonical-v4-hard" else task.difficulty,
+            difficulty=(
+                "hard"
+                if self._data_version in {
+                    "canonical-v4-hard",
+                    "canonical-v5-blind-hard",
+                }
+                else task.difficulty
+            ),
             source=source,
             quality_score=0.0,
         )
@@ -596,6 +628,38 @@ class AgentDataFactory:
             "Spain": "France",
         }
         return distractors.get(task.answer, "Unrelated country")
+
+    def _with_blind_hard_prompt(self, question: str, task: EvolvedTask) -> str:
+        entity = self._entity_from_tool_plan(task)
+        alias_traps = self._alias_traps_for_answer(task.answer)
+        noisy_context = task.noisy_context or [
+            f"{entity} has unrelated biographical details that are not birthplace evidence."
+        ]
+        evidence_hints = task.evidence[:1]
+        prompt_lines = [
+            question,
+            "",
+            "Blind hard heldout instructions:",
+            (
+                "- Use ReAct steps with wikidata_lookup[entity, P19], "
+                "then wikidata_lookup[birthplace, P17]."
+            ),
+            "- Do not invent localized, nationality, residence, or career-country observations.",
+            "- The final answer must be the country supported by the two tool calls.",
+            "",
+            f"Alias trap: {', '.join(alias_traps)} may appear relevant but must not replace tool observations.",
+            "Noisy context:",
+            *[f"- {item}" for item in noisy_context],
+        ]
+        if evidence_hints:
+            prompt_lines.extend(
+                [
+                    "",
+                    "Evidence hint:",
+                    *[f"- {item}" for item in evidence_hints],
+                ]
+            )
+        return "\n".join(prompt_lines)
 
     def _conflict_types_for_task(self, task: EvolvedTask) -> list[str]:
         conflict_types = ["country_alias", "birthplace_alias"]
