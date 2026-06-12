@@ -275,6 +275,27 @@ def test_factory_marks_canonical_v3_observation_grounding_metadata():
     assert sample.source["data_version"] == "canonical-v3"
     assert sample.source["observation_grounding"] == "gold_tool_results"
     assert sample.verifier_result.checks["observation_faithfulness"] is True
+    assert "Available lookup observations:" not in sample.question
+
+
+def test_factory_can_generate_canonical_v4_lookup_conditioned_sample():
+    factory = AgentDataFactory.from_demo_knowledge_graph(data_version="canonical-v4")
+
+    accepted, rejected, _ = factory.generate_verified(count=1)
+
+    assert rejected == []
+    sample = accepted[0]
+    assert sample.source["data_version"] == "canonical-v4"
+    assert sample.source["observation_grounding"] == "provided_lookup_results"
+    assert sample.source["observation_conditioning"] == "lookup_result_block"
+    assert sample.source["lookup_observation_block"] is True
+    assert "country_alias" in sample.source["conflict_types"]
+    assert "birthplace_alias" in sample.source["conflict_types"]
+    assert "Available lookup observations:" in sample.question
+    assert "- wikidata_lookup[Ada Lovelace, P19] -> London" in sample.question
+    assert "- wikidata_lookup[London, P17] -> United Kingdom" in sample.question
+    assert "Use these lookup observations exactly" in sample.question
+    assert sample.verifier_result.checks["observation_faithfulness"] is True
 
 
 def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
@@ -320,6 +341,30 @@ def test_factory_exports_jsonl_sft_rl_and_summary(tmp_path: Path):
     assert rl_row["verifier_checks"]["observation_faithfulness"] is True
     assert "total,accepted,rejected" in summary_path.read_text(encoding="utf-8")
     assert '"verifier_result"' in trace_path.read_text(encoding="utf-8")
+
+
+def test_factory_exports_v4_sft_with_lookup_conditioning_prompt(tmp_path: Path):
+    factory = AgentDataFactory.from_demo_knowledge_graph(data_version="canonical-v4")
+    accepted, _, _ = factory.generate_verified(count=1)
+    sft_path = tmp_path / "sft.jsonl"
+
+    factory.export_sft(accepted, sft_path)
+
+    sft_row = json.loads(sft_path.read_text(encoding="utf-8").splitlines()[0])
+    system = sft_row["messages"][0]["content"]
+    user = sft_row["messages"][1]["content"]
+    assert "copy the provided lookup observation values exactly" in system
+    assert "Available lookup observations:" in user
+    assert "wikidata_lookup[Ada Lovelace, P19] -> London" in user
+
+
+def test_factory_rejects_unknown_data_version():
+    try:
+        AgentDataFactory.from_demo_knowledge_graph(data_version="canonical-v9")
+    except ValueError as exc:
+        assert "data_version" in str(exc)
+    else:
+        raise AssertionError("expected invalid data_version to raise ValueError")
 
 
 def test_factory_loads_seed_file_and_repeats_it_to_requested_count():

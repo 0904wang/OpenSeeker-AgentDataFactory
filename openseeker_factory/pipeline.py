@@ -19,6 +19,7 @@ from openseeker_factory.schema import (
 ACTION_QUERY_RE = re.compile(
     r"action\s*:\s*wikidata_lookup\s*\[([^\]]+)\]", re.IGNORECASE
 )
+DATA_VERSIONS = {"canonical-v3", "canonical-v4"}
 
 
 @dataclass(eq=True)
@@ -96,16 +97,22 @@ class AgentDataFactory:
         seeds: list[SeedTask],
         seed_source_label: str = "wikidata-demo",
         teacher_backend: ChatBackend | None = None,
+        data_version: str = "canonical-v3",
     ) -> None:
         if not seeds:
             raise ValueError("at least one seed task is required")
+        if data_version not in DATA_VERSIONS:
+            raise ValueError(f"data_version must be one of {sorted(DATA_VERSIONS)}")
         self._seeds = seeds
         self._seed_source_label = seed_source_label
         self._teacher_backend = teacher_backend
+        self._data_version = data_version
 
     @classmethod
     def from_demo_knowledge_graph(
-        cls, teacher_backend: ChatBackend | None = None
+        cls,
+        teacher_backend: ChatBackend | None = None,
+        data_version: str = "canonical-v3",
     ) -> "AgentDataFactory":
         seeds = [
             SeedTask(
@@ -162,11 +169,15 @@ class AgentDataFactory:
             seeds,
             seed_source_label="wikidata-demo",
             teacher_backend=teacher_backend,
+            data_version=data_version,
         )
 
     @classmethod
     def from_seed_file(
-        cls, path: Path, teacher_backend: ChatBackend | None = None
+        cls,
+        path: Path,
+        teacher_backend: ChatBackend | None = None,
+        data_version: str = "canonical-v3",
     ) -> "AgentDataFactory":
         seeds: list[SeedTask] = []
         with path.open("r", encoding="utf-8") as handle:
@@ -198,6 +209,7 @@ class AgentDataFactory:
             seeds,
             seed_source_label=path.as_posix(),
             teacher_backend=teacher_backend,
+            data_version=data_version,
         )
 
     def generate_verified(
@@ -438,11 +450,20 @@ class AgentDataFactory:
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
-        source["data_version"] = "canonical-v3"
-        source["observation_grounding"] = "gold_tool_results"
-        source["observation_grounding_policy"] = (
-            "observations_must_match_expected_tool_results"
-        )
+        source["data_version"] = self._data_version
+        if self._data_version == "canonical-v4":
+            source["observation_grounding"] = "provided_lookup_results"
+            source["observation_conditioning"] = "lookup_result_block"
+            source["lookup_observation_block"] = True
+            source["conflict_types"] = self._conflict_types_for_task(task)
+            source["observation_grounding_policy"] = (
+                "observations_must_copy_provided_lookup_results"
+            )
+        else:
+            source["observation_grounding"] = "gold_tool_results"
+            source["observation_grounding_policy"] = (
+                "observations_must_match_expected_tool_results"
+            )
         default_trajectory = self._default_trajectory(task)
         if task.trajectory_draft is None:
             trajectory = default_trajectory
@@ -465,12 +486,16 @@ class AgentDataFactory:
         else:
             trajectory = task.trajectory_draft
         question = task.question
+        if self._data_version == "canonical-v4":
+            question = self._with_lookup_observation_block(question, task.tool_plan)
         question_repair_reason = self._question_repair_reason(question, task)
         if question_repair_reason is not None:
             source["question_repaired"] = True
             source["question_repair_reason"] = question_repair_reason
             source["original_question"] = question
             question = self._default_question_for_task(task)
+            if self._data_version == "canonical-v4":
+                question = self._with_lookup_observation_block(question, task.tool_plan)
 
         return AgentDataSample(
             id=task.id,
@@ -485,6 +510,29 @@ class AgentDataFactory:
             source=source,
             quality_score=0.0,
         )
+
+    def _with_lookup_observation_block(
+        self, question: str, tool_plan: Sequence[ToolCall]
+    ) -> str:
+        rows = [
+            f"- {tool_call.tool}[{tool_call.query}] -> {tool_call.result}"
+            for tool_call in tool_plan
+        ]
+        block = "\n".join(
+            [
+                "Available lookup observations:",
+                *rows,
+                "",
+                "Use these lookup observations exactly when writing Observation lines.",
+            ]
+        )
+        return f"{question}\n\n{block}"
+
+    def _conflict_types_for_task(self, task: EvolvedTask) -> list[str]:
+        conflict_types = ["country_alias", "birthplace_alias"]
+        if task.noisy_context or task.task_type == "noisy_context_retrieval_qa":
+            conflict_types.append("noisy_context")
+        return conflict_types
 
     def _default_trajectory(self, task: EvolvedTask) -> list[str]:
         trajectory = [
@@ -689,18 +737,23 @@ class AgentDataFactory:
     def export_sft(self, samples: Iterable[AgentDataSample], path: Path) -> None:
         def rows() -> Iterable[dict[str, Any]]:
             for sample in samples:
+                system_prompt = (
+                    "You are a ReAct agent that must cite tool observations. "
+                    "Actions must use the provided lookup schema, and "
+                    "Observation lines must match lookup observations from "
+                    "the evidence instead of memorized or localized facts."
+                )
+                if sample.source.get("data_version") == "canonical-v4":
+                    system_prompt = (
+                        "You are a ReAct agent that must cite tool observations. "
+                        "Actions must use the provided lookup schema, and "
+                        "Observation lines must copy the provided lookup observation "
+                        "values exactly instead of using memorized or localized facts."
+                    )
                 yield {
                     "id": sample.id,
                     "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a ReAct agent that must cite tool observations. "
-                                "Actions must use the provided lookup schema, and "
-                                "Observation lines must match lookup observations from "
-                                "the evidence instead of memorized or localized facts."
-                            ),
-                        },
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": sample.question},
                         {"role": "assistant", "content": "\n".join(sample.trajectory)},
                     ],

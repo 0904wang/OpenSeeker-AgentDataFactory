@@ -25,6 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
     demo = subparsers.add_parser("demo", help="Generate verified demo artifacts.")
     demo.add_argument("--count", type=int, default=3, help="Number of seed tasks.")
     demo.add_argument(
+        "--data-version",
+        choices=["canonical-v3", "canonical-v4"],
+        default="canonical-v3",
+        help="Synthetic data contract to use.",
+    )
+    demo.add_argument(
         "--out-dir",
         type=Path,
         default=Path("outputs/demo"),
@@ -51,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["evol_instruct", "magpie_self_instruct"],
         default="evol_instruct",
         help="Task expansion strategy label.",
+    )
+    generate.add_argument(
+        "--data-version",
+        choices=["canonical-v3", "canonical-v4"],
+        default="canonical-v3",
+        help="Synthetic data contract to use.",
     )
     generate.add_argument(
         "--teacher-backend",
@@ -218,8 +230,8 @@ def print_progress(index: int, total: int, sample: AgentDataSample) -> None:
     )
 
 
-def run_demo(count: int, out_dir: Path) -> int:
-    factory = AgentDataFactory.from_demo_knowledge_graph()
+def run_demo(count: int, out_dir: Path, data_version: str) -> int:
+    factory = AgentDataFactory.from_demo_knowledge_graph(data_version=data_version)
     accepted, rejected, metrics = factory.generate_verified(count=count)
     export_artifacts(factory, accepted, rejected, metrics, out_dir)
 
@@ -249,8 +261,13 @@ def run_generate(
     teacher_concurrency: int,
     batch_size: int | None,
     resume: bool,
+    data_version: str,
 ):
-    factory = AgentDataFactory.from_seed_file(seed_file, teacher_backend=teacher_backend)
+    factory = AgentDataFactory.from_seed_file(
+        seed_file,
+        teacher_backend=teacher_backend,
+        data_version=data_version,
+    )
     if batch_size is not None or resume:
         return run_generate_batched(
             factory=factory,
@@ -431,7 +448,7 @@ def run_evaluate_model(
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "demo":
-        return run_demo(args.count, args.out_dir)
+        return run_demo(args.count, args.out_dir, args.data_version)
     if args.command == "build-seeds":
         return run_build_seeds(args.out_file, args.limit, args.offset)
     if args.command == "generate":
@@ -451,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             args.teacher_concurrency,
             args.batch_size,
             args.resume,
+            args.data_version,
         )
     if args.command == "evaluate-model":
         return run_evaluate_model(

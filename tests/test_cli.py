@@ -118,6 +118,41 @@ def test_cli_generate_uses_seed_file_and_writes_baseline_artifacts(tmp_path: Pat
     assert "5,5,0" in (out_dir / "summary.csv").read_text(encoding="utf-8")
 
 
+def test_cli_generate_supports_canonical_v4_data_version(tmp_path: Path):
+    out_dir = tmp_path / "canonical-v4"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "1",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--data-version",
+            "canonical-v4",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "accepted=1 rejected=0" in result.stdout
+    sample = json.loads(
+        (out_dir / "samples.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert sample["source"]["data_version"] == "canonical-v4"
+    assert "Available lookup observations:" in sample["question"]
+    sft = json.loads(
+        (out_dir / "sft_conversations.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert "copy the provided lookup observation values exactly" in sft["messages"][0]["content"]
+    assert "Available lookup observations:" in sft["messages"][1]["content"]
+
+
 def test_cli_generate_batches_export_artifacts_after_all_batches(tmp_path: Path):
     out_dir = tmp_path / "batched"
     result = subprocess.run(

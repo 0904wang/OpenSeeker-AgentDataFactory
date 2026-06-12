@@ -66,7 +66,7 @@ python -m pytest
 Expected local result at the time of writing:
 
 ```text
-52 passed
+57 passed
 ```
 
 ## Run Demo
@@ -118,6 +118,32 @@ python -m openseeker_factory.cli generate \
 ```
 
 Batch mode appends raw teacher generations as they finish and refreshes `samples.jsonl`, `sft_conversations.jsonl`, `rl_rewards.jsonl`, `trace.jsonl`, and `summary.csv` after each completed batch. `--resume` loads `raw_generations.jsonl` and fills missing `seed_id` values, which is safer than resuming by line count when high-concurrency requests finish out of order.
+
+### Canonical-v4 Evidence-Conditioned Data
+
+Use `--data-version canonical-v4` when the goal is to train observation-faithful ReAct traces. Canonical-v4 keeps the same schema and canonical `P19` / `P17` tool calls, but augments each question with explicit lookup results:
+
+```text
+Available lookup observations:
+- wikidata_lookup[Ada Lovelace, P19] -> London
+- wikidata_lookup[London, P17] -> United Kingdom
+
+Use these lookup observations exactly when writing Observation lines.
+```
+
+The SFT export also strengthens the system message so `Observation:` lines must copy the provided lookup observation values exactly instead of using memorized or localized facts. This is meant to target failure modes such as `England` vs `United Kingdom`, historical aliases, spelling variants, and noisy context leakage.
+
+Example:
+
+```bash
+python -m openseeker_factory.cli generate \
+  --count 1000 \
+  --seed-file data/seeds/wikidata_seed_expanded.jsonl \
+  --out-dir outputs/canonical-v4-1k \
+  --data-version canonical-v4 \
+  --batch-size 100 \
+  --resume
+```
 
 ## Optional Teacher Backend
 
