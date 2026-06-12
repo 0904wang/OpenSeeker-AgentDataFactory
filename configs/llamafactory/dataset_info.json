@@ -68,5 +68,19 @@
       "assistant_tag": "assistant",
       "system_tag": "system"
     }
+  },
+  "openseeker_sft_2k_mixed_v3_v4_v5blind": {
+    "file_name": "openseeker_sft_2k_mixed_v3_v4_v5blind.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
   }
 }

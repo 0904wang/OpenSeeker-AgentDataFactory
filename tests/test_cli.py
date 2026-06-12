@@ -118,6 +118,40 @@ def test_cli_generate_uses_seed_file_and_writes_baseline_artifacts(tmp_path: Pat
     assert "5,5,0" in (out_dir / "summary.csv").read_text(encoding="utf-8")
 
 
+def test_cli_generate_supports_start_index_for_disjoint_variants(tmp_path: Path):
+    out_dir = tmp_path / "offset"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "2",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--start-index",
+            "4",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "accepted=2 rejected=0" in result.stdout
+    samples = [
+        json.loads(line)
+        for line in (out_dir / "samples.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [sample["source"]["seed_id"] for sample in samples] == [
+        "wikidata-ada-5",
+        "wikidata-curie-6",
+    ]
+    assert [sample["source"]["variant_index"] for sample in samples] == [3, 3]
+
+
 def test_cli_generate_supports_canonical_v4_data_version(tmp_path: Path):
     out_dir = tmp_path / "canonical-v4"
     result = subprocess.run(

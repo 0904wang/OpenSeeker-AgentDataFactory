@@ -108,6 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum concurrent teacher requests.",
     )
     generate.add_argument(
+        "--start-index",
+        type=int,
+        default=0,
+        help="Start offset for deterministic seed expansion.",
+    )
+    generate.add_argument(
         "--batch-size",
         type=int,
         default=None,
@@ -272,6 +278,7 @@ def run_generate(
     batch_size: int | None,
     resume: bool,
     data_version: str,
+    start_index: int,
 ):
     factory = AgentDataFactory.from_seed_file(
         seed_file,
@@ -287,6 +294,7 @@ def run_generate(
             teacher_concurrency=teacher_concurrency,
             batch_size=batch_size or count,
             resume=resume,
+            start_index=start_index,
         )
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -304,6 +312,7 @@ def run_generate(
             strategy=strategy,
             progress_callback=stream_progress,
             teacher_concurrency=teacher_concurrency,
+            start_index=start_index,
         )
     export_artifacts(factory, accepted, rejected, metrics, out_dir)
     print(
@@ -337,12 +346,13 @@ def run_generate_batched(
     teacher_concurrency: int,
     batch_size: int,
     resume: bool,
+    start_index: int = 0,
 ):
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     out_dir.mkdir(parents=True, exist_ok=True)
     raw_generations_path = out_dir / "raw_generations.jsonl"
-    target_seeds = factory.seed_expand(count=count)
+    target_seeds = factory.seed_expand(count=count, start_index=start_index)
     target_seed_ids = [seed.id for seed in target_seeds]
     target_seed_id_set = set(target_seed_ids)
 
@@ -479,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
             args.batch_size,
             args.resume,
             args.data_version,
+            args.start_index,
         )
     if args.command == "evaluate-model":
         return run_evaluate_model(
