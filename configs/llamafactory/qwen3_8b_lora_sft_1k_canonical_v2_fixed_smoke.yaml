@@ -1,0 +1,42 @@
+### model
+model_name_or_path: /data/wzl/OpenSeeker-AgentDataFactory/.cache/huggingface/transformers/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218
+trust_remote_code: true
+template: qwen3
+flash_attn: auto
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 8
+lora_alpha: 16
+lora_dropout: 0.05
+
+### dataset
+dataset: openseeker_sft_1k_canonical_v2_fixed
+dataset_dir: /data/wzl/OpenSeeker-AgentDataFactory/data/llamafactory
+cutoff_len: 2048
+max_samples: 8
+preprocessing_num_workers: 2
+overwrite_cache: true
+
+### output
+output_dir: /data/wzl/OpenSeeker-AgentDataFactory/checkpoints/qwen3-8b-openseeker-sft-1k-canonical-v2-fixed-smoke
+overwrite_output_dir: true
+logging_dir: /data/wzl/OpenSeeker-AgentDataFactory/logs/qwen3-8b-openseeker-sft-1k-canonical-v2-fixed-smoke
+logging_steps: 1
+save_strategy: "no"
+plot_loss: false
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+num_train_epochs: 1.0
+max_steps: 1
+lr_scheduler_type: cosine
+warmup_ratio: 0.0
+bf16: true
+ddp_timeout: 180000000

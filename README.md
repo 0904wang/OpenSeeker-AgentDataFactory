@@ -66,7 +66,7 @@ python -m pytest
 Expected local result at the time of writing:
 
 ```text
-7 passed
+52 passed
 ```
 
 ## Run Demo
@@ -99,6 +99,26 @@ python -m openseeker_factory.cli generate \
 
 `data/seeds/wikidata_seed_sample.jsonl` is a small format example. For a real 5k baseline, replace it with a Wikidata-derived seed file and keep the same schema.
 
+For remote teacher generation, prefer batched/resumable output instead of one large single-shot run:
+
+```bash
+python -m openseeker_factory.cli generate \
+  --count 1000 \
+  --seed-file /data/wzl/OpenSeeker-AgentDataFactory/data/seeds/wikidata_seed_expanded.jsonl \
+  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/seed-expand-1k-batch50-c50 \
+  --strategy magpie_self_instruct \
+  --teacher-backend openai-compatible \
+  --teacher-base-url https://api.deepseek.com \
+  --teacher-model deepseek-v4-pro \
+  --teacher-api-key-env DEEPSEEK_API_KEY \
+  --teacher-timeout-s 60 \
+  --teacher-concurrency 50 \
+  --batch-size 50 \
+  --resume
+```
+
+Batch mode appends raw teacher generations as they finish and refreshes `samples.jsonl`, `sft_conversations.jsonl`, `rl_rewards.jsonl`, `trace.jsonl`, and `summary.csv` after each completed batch. `--resume` loads `raw_generations.jsonl` and fills missing `seed_id` values, which is safer than resuming by line count when high-concurrency requests finish out of order.
+
 ## Optional Teacher Backend
 
 `generate` can also draft tasks through an OpenAI-compatible endpoint. For DeepSeek official API:
@@ -115,6 +135,34 @@ python -m openseeker_factory.cli generate \
 ```
 
 Set the API key in the environment variable named by `--teacher-api-key-env`.
+
+## Evaluate Model Outputs
+
+Use `evaluate-model` to score a base model, a LoRA adapter, or an existing prediction file against OpenSeeker samples:
+
+```bash
+python -m openseeker_factory.cli evaluate-model \
+  --samples outputs/demo/samples.jsonl \
+  --prediction-file outputs/demo/predictions.jsonl \
+  --model-label fake-model \
+  --out-dir outputs/eval
+```
+
+The evaluator keeps strict `exact_match_rate` for resume-safe reporting and also writes `canonical_match_rate` for country/region aliases such as `England` or `Scotland` mapping to `United Kingdom`. Prediction rows include `error_bucket`; summary CSV files include stable bucket rates for:
+
+```text
+correct
+canonical_alias_match
+missing_final
+trajectory_format_error
+tool_coverage_gap
+supported_but_wrong_answer
+unsupported_wrong_answer
+```
+
+For tool-use scoring, query matching normalizes punctuation, initials, and diacritics so equivalent calls such as `CV Raman` vs `C. V. Raman` and `Würzburg` vs `Wurzburg` do not become artificial tool-coverage failures. Model evaluation prompts also require at most two `wikidata_lookup` calls and a final line in the form `Final: <country>`.
+
+The evaluator also reports `observation_faithfulness_rate` and `observation_coverage_avg`. These metrics check whether the `Observation:` text following a matched tool call contains the expected gold tool result, catching cases where a model uses the right `P19/P17` action syntax but fills the observation with unsupported memorized or localized facts.
 
 ## Data Schema
 
@@ -145,8 +193,13 @@ Verifier checks currently include:
 - `not_duplicate`
 - `answer_supported`
 - `evidence_coverage`
+- `evidence_faithfulness`
 - `tool_success`
 - `trajectory_valid`
+
+`evidence_faithfulness` checks that the generated trajectory mentions the expected tool results, including the seed's intermediate birthplace and final country. This catches cases where a model answers the country correctly while drifting to an unsupported intermediate location.
+
+When a teacher backend drafts a ReAct trajectory, the factory validates both the required ReAct shape and this evidence-faithfulness constraint before export. Invalid or evidence-drifting teacher trajectories are repaired by falling back to the deterministic seed-derived trajectory, and the sample `source` records `teacher_trajectory_repaired=true` plus a `teacher_trajectory_repair_reason`.
 
 ## Seed File Schema
 
@@ -195,7 +248,9 @@ First baseline command candidate:
 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate \
   --count 5000 \
   --seed-file data/seeds/wikidata_seed_sample.jsonl \
-  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k
+  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/baseline-5k \
+  --batch-size 100 \
+  --resume
 ```
 
 This candidate still requires user approval before remote execution.

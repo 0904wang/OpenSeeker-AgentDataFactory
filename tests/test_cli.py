@@ -17,7 +17,7 @@ class _TeacherHandler(BaseHTTPRequestHandler):
                     "message": {
                         "content": json.dumps(
                             {
-                                "question": "CLI teacher generated question?",
+                                "question": "CLI teacher generated Ada Lovelace question?",
                                 "difficulty": "hard",
                                 "trajectory": [
                                     "Thought: Use the lookup trajectory.",
@@ -118,6 +118,117 @@ def test_cli_generate_uses_seed_file_and_writes_baseline_artifacts(tmp_path: Pat
     assert "5,5,0" in (out_dir / "summary.csv").read_text(encoding="utf-8")
 
 
+def test_cli_generate_batches_export_artifacts_after_all_batches(tmp_path: Path):
+    out_dir = tmp_path / "batched"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "5",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--batch-size",
+            "2",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "accepted=5 rejected=0" in result.stdout
+    assert "batch complete: completed=2/5" in result.stdout
+    assert "batch complete: completed=4/5" in result.stdout
+    assert "batch complete: completed=5/5" in result.stdout
+    assert (out_dir / "raw_generations.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert (out_dir / "samples.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert (out_dir / "sft_conversations.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert (out_dir / "rl_rewards.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert (out_dir / "trace.jsonl").read_text(encoding="utf-8").count("\n") == 5
+    assert "5,5,0" in (out_dir / "summary.csv").read_text(encoding="utf-8")
+
+
+def test_cli_generate_resume_fills_missing_seed_ids_without_duplication(tmp_path: Path):
+    out_dir = tmp_path / "resume"
+    first = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "3",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--batch-size",
+            "2",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "accepted=3 rejected=0" in first.stdout
+
+    raw_path = out_dir / "raw_generations.jsonl"
+    raw_rows = [
+        json.loads(line)
+        for line in raw_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    raw_path.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in raw_rows
+            if row["source"]["seed_id"] != "wikidata-curie-2"
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    resumed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "3",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--batch-size",
+            "2",
+            "--resume",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "resume: loaded=2 remaining=1" in resumed.stdout
+    assert "accepted=3 rejected=0" in resumed.stdout
+    final_rows = [
+        json.loads(line)
+        for line in raw_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    seed_ids = [row["source"]["seed_id"] for row in final_rows]
+    assert sorted(seed_ids) == [
+        "wikidata-ada-1",
+        "wikidata-ada-3",
+        "wikidata-curie-2",
+    ]
+    assert len(seed_ids) == len(set(seed_ids))
+    assert (out_dir / "samples.jsonl").read_text(encoding="utf-8").count("\n") == 3
+
+
 def test_cli_build_seeds_writes_expanded_seed_file(tmp_path: Path):
     out_file = tmp_path / "expanded.jsonl"
 
@@ -137,6 +248,97 @@ def test_cli_build_seeds_writes_expanded_seed_file(tmp_path: Path):
 
     assert "OpenSeeker seed build complete" in result.stdout
     assert out_file.read_text(encoding="utf-8").count("\n") >= 90
+
+
+def test_cli_build_seeds_supports_offset_for_heldout_file(tmp_path: Path):
+    out_file = tmp_path / "heldout.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "build-seeds",
+            "--out-file",
+            str(out_file),
+            "--offset",
+            "120",
+            "--limit",
+            "3",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in out_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "rows=3" in result.stdout
+    assert len(rows) == 3
+    assert {row["entity"] for row in rows} == {"James Clerk Maxwell"}
+
+
+def test_cli_evaluate_model_scores_prediction_file(tmp_path: Path):
+    samples_dir = tmp_path / "samples"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "demo",
+            "--count",
+            "1",
+            "--out-dir",
+            str(samples_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    sample = json.loads(
+        (samples_dir / "samples.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    prediction_file = tmp_path / "predictions.jsonl"
+    prediction_file.write_text(
+        json.dumps(
+            {
+                "id": sample["id"],
+                "prediction": "Thought: done.\nFinal: United Kingdom",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "eval"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "evaluate-model",
+            "--samples",
+            str(samples_dir / "samples.jsonl"),
+            "--prediction-file",
+            str(prediction_file),
+            "--model-label",
+            "fake-model",
+            "--out-dir",
+            str(out_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "OpenSeeker model evaluation complete" in result.stdout
+    assert (out_dir / "fake-model_predictions.jsonl").exists()
+    summary = (out_dir / "fake-model_summary.csv").read_text(encoding="utf-8")
+    assert "exact_match_rate" in summary
+    assert "1.0" in summary
 
 
 def test_cli_generate_can_use_openai_compatible_teacher_backend(tmp_path: Path):
@@ -184,5 +386,5 @@ def test_cli_generate_can_use_openai_compatible_teacher_backend(tmp_path: Path):
         in result.stdout
     )
     first = json.loads((out_dir / "samples.jsonl").read_text(encoding="utf-8"))
-    assert first["question"] == "CLI teacher generated question?"
+    assert first["question"] == "CLI teacher generated Ada Lovelace question?"
     assert first["difficulty"] == "hard"

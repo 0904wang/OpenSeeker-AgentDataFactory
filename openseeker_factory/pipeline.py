@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Sequence
 
 from openseeker_factory.backends import ChatBackend
 from openseeker_factory.schema import (
@@ -13,6 +14,10 @@ from openseeker_factory.schema import (
     AgentDataSample,
     ToolCall,
     VerifierResult,
+)
+
+ACTION_QUERY_RE = re.compile(
+    r"action\s*:\s*wikidata_lookup\s*\[([^\]]+)\]", re.IGNORECASE
 )
 
 
@@ -51,6 +56,7 @@ class QualityMetrics:
     dedup_rate: float
     solvability_rate: float
     evidence_hit_rate: float
+    evidence_faithfulness_rate: float
     tool_success_rate: float
     trajectory_valid_rate: float
     teacher_attempted: int
@@ -58,6 +64,7 @@ class QualityMetrics:
     teacher_failed: int
     teacher_fallback_rate: float
     teacher_trajectory_repaired: int
+    question_repaired: int
     teacher_difficulty_normalized: int
     manual_sample_pass_rate: float | None = None
 
@@ -69,6 +76,7 @@ class QualityMetrics:
             "dedup_rate": self.dedup_rate,
             "solvability_rate": self.solvability_rate,
             "evidence_hit_rate": self.evidence_hit_rate,
+            "evidence_faithfulness_rate": self.evidence_faithfulness_rate,
             "tool_success_rate": self.tool_success_rate,
             "trajectory_valid_rate": self.trajectory_valid_rate,
             "teacher_attempted": self.teacher_attempted,
@@ -76,6 +84,7 @@ class QualityMetrics:
             "teacher_failed": self.teacher_failed,
             "teacher_fallback_rate": self.teacher_fallback_rate,
             "teacher_trajectory_repaired": self.teacher_trajectory_repaired,
+            "question_repaired": self.question_repaired,
             "teacher_difficulty_normalized": self.teacher_difficulty_normalized,
             "manual_sample_pass_rate": self.manual_sample_pass_rate,
         }
@@ -197,10 +206,42 @@ class AgentDataFactory:
         strategy: str = "evol_instruct",
         progress_callback: Callable[[int, int, AgentDataSample], None] | None = None,
         teacher_concurrency: int = 1,
+        start_index: int = 0,
     ) -> tuple[list[AgentDataSample], list[AgentDataSample], QualityMetrics]:
+        samples = self.generate_samples(
+            count=count,
+            strategy=strategy,
+            progress_callback=progress_callback,
+            teacher_concurrency=teacher_concurrency,
+            start_index=start_index,
+        )
+        return self.verify_and_filter(samples)
+
+    def generate_samples(
+        self,
+        count: int,
+        strategy: str = "evol_instruct",
+        progress_callback: Callable[[int, int, AgentDataSample], None] | None = None,
+        teacher_concurrency: int = 1,
+        start_index: int = 0,
+    ) -> list[AgentDataSample]:
+        seeds = self.seed_expand(count=count, start_index=start_index)
+        return self.generate_samples_for_seeds(
+            seeds,
+            strategy=strategy,
+            progress_callback=progress_callback,
+            teacher_concurrency=teacher_concurrency,
+        )
+
+    def generate_samples_for_seeds(
+        self,
+        seeds: Sequence[SeedTask],
+        strategy: str = "evol_instruct",
+        progress_callback: Callable[[int, int, AgentDataSample], None] | None = None,
+        teacher_concurrency: int = 1,
+    ) -> list[AgentDataSample]:
         if teacher_concurrency < 1:
             raise ValueError("teacher_concurrency must be positive")
-        seeds = self.seed_expand(count=count)
         total = len(seeds)
 
         def build_sample(index: int, seed: SeedTask) -> tuple[int, AgentDataSample]:
@@ -215,7 +256,7 @@ class AgentDataFactory:
                 samples.append(sample)
                 if progress_callback is not None:
                     progress_callback(index, total, sample)
-            return self.verify_and_filter(samples)
+            return samples
 
         samples_by_index: dict[int, AgentDataSample] = {}
         with ThreadPoolExecutor(max_workers=teacher_concurrency) as executor:
@@ -232,14 +273,18 @@ class AgentDataFactory:
                     progress_callback(completed, total, sample)
 
         samples = [samples_by_index[index] for index in range(1, total + 1)]
-        return self.verify_and_filter(samples)
+        return samples
 
-    def seed_expand(self, count: int) -> list[SeedTask]:
+    def seed_expand(self, count: int, start_index: int = 0) -> list[SeedTask]:
         if count < 1:
             raise ValueError("count must be positive")
+        if start_index < 0:
+            raise ValueError("start_index must be non-negative")
         expanded = []
-        for index in range(count):
-            base = self._seeds[index % len(self._seeds)]
+        for index in range(start_index, start_index + count):
+            base_index = index % len(self._seeds)
+            base = self._seeds[base_index]
+            variant_index = (index // len(self._seeds)) + 1
             expanded.append(
                 SeedTask(
                     id=f"{base.id}-{index + 1}",
@@ -250,7 +295,7 @@ class AgentDataFactory:
                     answer=base.answer,
                     evidence=list(base.evidence),
                     noisy_context=list(base.noisy_context),
-                    variant_index=index + 1,
+                    variant_index=variant_index,
                 )
             )
         return expanded
@@ -266,12 +311,12 @@ class AgentDataFactory:
         tool_plan = [
             ToolCall(
                 tool="wikidata_lookup",
-                query=f"{seed.entity} birthplace",
+                query=f"{seed.entity}, P19",
                 result=seed.intermediate,
             ),
             ToolCall(
                 tool="wikidata_lookup",
-                query=f"{seed.intermediate} country",
+                query=f"{seed.intermediate}, P17",
                 result=seed.answer,
             ),
         ]
@@ -309,7 +354,10 @@ class AgentDataFactory:
                             "content": (
                                 "Return only JSON with question, difficulty, and trajectory. "
                                 "The trajectory must be a list of ReAct strings using this exact style: "
-                                "Thought: ..., Action: wikidata_lookup[...], Observation: ..., Final: ..."
+                                "Thought: ..., Action: wikidata_lookup[...], Observation: ..., Final: ... "
+                                "Use canonical Wikidata property calls only: "
+                                "wikidata_lookup[<entity>, P19] for birthplace and "
+                                "wikidata_lookup[<birthplace>, P17] for country."
                             ),
                         },
                         {
@@ -372,25 +420,57 @@ class AgentDataFactory:
         round_number = ((variant - 1) // len(templates)) + 1
         question = template.format(entity=seed.entity)
         if round_number > 1:
-            question = f"{question} Use synthesis round {round_number}."
+            repeat_constraints = [
+                "Use the birthplace clue rather than career context.",
+                f"Start from {seed.intermediate}, then resolve the country.",
+                "Use only evidence that connects the person to a birthplace and country.",
+                "Give the country name as the final answer.",
+                f"Resolve {seed.intermediate} to its present-day country.",
+                "Ignore unrelated biographical clues while answering.",
+                "Follow the two-hop evidence chain before responding.",
+                "Treat the birthplace statement as the controlling clue.",
+            ]
+            constraint = repeat_constraints[
+                (round_number - 2) % len(repeat_constraints)
+            ]
+            question = f"{question} {constraint}"
         return question
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
         default_trajectory = self._default_trajectory(task)
-        if task.trajectory_draft and self._is_react_trajectory(
-            task.trajectory_draft, task.answer
-        ):
-            trajectory = task.trajectory_draft
-        else:
+        if task.trajectory_draft is None:
             trajectory = default_trajectory
-            if task.trajectory_draft:
-                source["teacher_trajectory_repaired"] = True
+        elif not self._is_react_trajectory(task.trajectory_draft, task.answer):
+            trajectory = default_trajectory
+            source["teacher_trajectory_repaired"] = True
+            source["teacher_trajectory_repair_reason"] = "react_format"
+        elif not self._trajectory_contains_expected_results(
+            task.trajectory_draft, task.tool_plan
+        ):
+            trajectory = default_trajectory
+            source["teacher_trajectory_repaired"] = True
+            source["teacher_trajectory_repair_reason"] = "evidence_faithfulness"
+        elif not self._trajectory_contains_expected_tool_calls(
+            task.trajectory_draft, task.tool_plan
+        ):
+            trajectory = default_trajectory
+            source["teacher_trajectory_repaired"] = True
+            source["teacher_trajectory_repair_reason"] = "tool_call_coverage"
+        else:
+            trajectory = task.trajectory_draft
+        question = task.question
+        question_repair_reason = self._question_repair_reason(question, task)
+        if question_repair_reason is not None:
+            source["question_repaired"] = True
+            source["question_repair_reason"] = question_repair_reason
+            source["original_question"] = question
+            question = self._default_question_for_task(task)
 
         return AgentDataSample(
             id=task.id,
             task_type=task.task_type,
-            question=task.question,
+            question=question,
             answer=task.answer,
             gold_evidence=task.evidence + task.noisy_context,
             tool_calls=list(task.tool_plan),
@@ -415,6 +495,44 @@ class AgentDataFactory:
             trajectory.insert(0, "Thought: Discard context that is not evidence-bearing.")
         return trajectory
 
+    def _question_repair_reason(
+        self, question: str, task: EvolvedTask
+    ) -> str | None:
+        question_text = question.lower()
+        expected_entity = self._entity_from_tool_plan(task)
+        if "use synthesis round" in question_text:
+            return "synthetic_round_marker"
+        if expected_entity.lower() not in question_text:
+            return "entity_alignment"
+        for seed in self._seeds:
+            if seed.entity != expected_entity and seed.entity.lower() in question_text:
+                return "entity_alignment"
+        return None
+
+    def _default_question_for_task(self, task: EvolvedTask) -> str:
+        entity = self._entity_from_tool_plan(task)
+        if task.task_type == "tool_use_qa":
+            return (
+                f"Use the lookup tool to find {entity}'s birthplace and return "
+                "the present-day country."
+            )
+        if task.task_type == "noisy_context_retrieval_qa":
+            return (
+                f"Ignore unrelated context and identify the country of {entity}'s "
+                "birthplace."
+            )
+        return f"What country was {entity} born in?"
+
+    def _entity_from_tool_plan(self, task: EvolvedTask) -> str:
+        if not task.tool_plan:
+            return "the person"
+        query = task.tool_plan[0].query
+        suffixes = (", P19", " birthplace")
+        for suffix in suffixes:
+            if query.endswith(suffix):
+                return query[: -len(suffix)]
+        return query
+
     def _is_react_trajectory(self, trajectory: list[str], answer: str) -> bool:
         trajectory_text = " ".join(trajectory).lower()
         return (
@@ -431,14 +549,20 @@ class AgentDataFactory:
         accepted: list[AgentDataSample] = []
         rejected: list[AgentDataSample] = []
         seen_questions: set[str] = set()
+        duplicate_rewrite_counts: dict[str, int] = {}
         duplicate_count = 0
 
         for sample in rows:
+            sample = self._repair_sample_question_if_needed(sample)
             normalized_question = " ".join(sample.question.lower().split())
             duplicate = normalized_question in seen_questions
             if duplicate:
+                duplicate_rewrite_counts[normalized_question] = (
+                    duplicate_rewrite_counts.get(normalized_question, 0) + 1
+                )
                 sample = self._rewrite_duplicate_question(
-                    sample, duplicate_index=duplicate_count + 1
+                    sample,
+                    duplicate_index=duplicate_rewrite_counts[normalized_question],
                 )
                 normalized_question = " ".join(sample.question.lower().split())
                 duplicate = normalized_question in seen_questions
@@ -459,16 +583,92 @@ class AgentDataFactory:
         self, sample: AgentDataSample, duplicate_index: int
     ) -> AgentDataSample:
         rewritten = AgentDataSample.from_json_dict(sample.to_json_dict())
-        seed_id = str(rewritten.source.get("seed_id", rewritten.id))
         rewritten.source = dict(rewritten.source)
         rewritten.source["duplicate_question_rewritten"] = True
         rewritten.source["original_question"] = rewritten.question
         rewritten.source["duplicate_rewrite_index"] = duplicate_index
-        rewritten.question = (
-            f"{rewritten.question} Disambiguate this sample with seed {seed_id} "
-            f"and sample id {rewritten.id}."
+        rewritten.question = self._natural_duplicate_question(
+            rewritten, duplicate_index
         )
         return rewritten
+
+    def _repair_sample_question_if_needed(
+        self, sample: AgentDataSample
+    ) -> AgentDataSample:
+        reason = self._sample_question_repair_reason(sample)
+        if reason is None:
+            return sample
+        repaired = AgentDataSample.from_json_dict(sample.to_json_dict())
+        repaired.source = dict(repaired.source)
+        repaired.source.setdefault("original_question", repaired.question)
+        repaired.source["question_repaired"] = True
+        repaired.source["question_repair_reason"] = reason
+        repaired.question = self._default_question_for_sample(repaired)
+        return repaired
+
+    def _sample_question_repair_reason(
+        self, sample: AgentDataSample
+    ) -> str | None:
+        question_text = sample.question.lower()
+        expected_entity = self._entity_from_tool_query(sample)
+        if "use synthesis round" in question_text:
+            return "synthetic_round_marker"
+        if expected_entity.lower() not in question_text:
+            return "entity_alignment"
+        for seed in self._seeds:
+            if seed.entity != expected_entity and seed.entity.lower() in question_text:
+                return "entity_alignment"
+        return None
+
+    def _default_question_for_sample(self, sample: AgentDataSample) -> str:
+        entity = self._entity_from_tool_query(sample)
+        if sample.task_type == "tool_use_qa":
+            return (
+                f"Use the lookup tool to find {entity}'s birthplace and return "
+                "the present-day country."
+            )
+        if sample.task_type == "noisy_context_retrieval_qa":
+            return (
+                f"Ignore unrelated context and identify the country of {entity}'s "
+                "birthplace."
+            )
+        return f"What country was {entity} born in?"
+
+    def _natural_duplicate_question(
+        self, sample: AgentDataSample, duplicate_index: int
+    ) -> str:
+        entity = self._entity_from_tool_query(sample)
+        intermediate = (
+            sample.tool_calls[0].result if sample.tool_calls else "the birthplace"
+        )
+        natural_constraints = [
+            "Use the birthplace clue rather than career context.",
+            f"Start from {intermediate}, then resolve the country.",
+            f"Confirm the location linked to {entity} before naming the country.",
+            "Use only evidence that connects the person to a birthplace and country.",
+            "Give the country name as the final answer.",
+            f"Resolve {intermediate} to its present-day country.",
+            "Ignore unrelated biographical clues while answering.",
+            "Follow the two-hop evidence chain before responding.",
+            "Treat the birthplace statement as the controlling clue.",
+            "Answer with the country supported by the lookup observations.",
+            "Use the location evidence and avoid using field-of-work clues.",
+            f"Check the country associated with {intermediate} before answering.",
+        ]
+        constraint = natural_constraints[
+            (duplicate_index - 1) % len(natural_constraints)
+        ]
+        return f"{sample.question} {constraint}"
+
+    def _entity_from_tool_query(self, sample: AgentDataSample) -> str:
+        if not sample.tool_calls:
+            return "the person"
+        query = sample.tool_calls[0].query
+        suffixes = (", P19", " birthplace")
+        for suffix in suffixes:
+            if query.endswith(suffix):
+                return query[: -len(suffix)]
+        return query
 
     def export_jsonl(self, samples: Iterable[AgentDataSample], path: Path) -> None:
         self._write_jsonl((sample.to_json_dict() for sample in samples), path)
@@ -538,6 +738,7 @@ class AgentDataFactory:
         evidence_text = " ".join(sample.gold_evidence).lower()
         tool_results = {call.result.lower() for call in sample.tool_calls}
         trajectory_text = " ".join(sample.trajectory).lower()
+        evidence_faithful = self._trajectory_matches_expected_evidence(sample)
 
         checks = {
             "not_duplicate": not duplicate,
@@ -545,7 +746,14 @@ class AgentDataFactory:
             "evidence_coverage": any(
                 call.result.lower() in evidence_text for call in sample.tool_calls
             ),
-            "tool_success": sample.answer.lower() in tool_results,
+            "evidence_faithfulness": evidence_faithful,
+            "question_entity_alignment": self._question_matches_expected_entity(sample),
+            "tool_success": (
+                sample.answer.lower() in tool_results
+                and self._trajectory_contains_expected_tool_calls(
+                    sample.trajectory, sample.tool_calls
+                )
+            ),
             "trajectory_valid": (
                 "thought:" in trajectory_text
                 and "action:" in trajectory_text
@@ -564,6 +772,49 @@ class AgentDataFactory:
         verified.quality_score = quality_score
         return verified
 
+    def _question_matches_expected_entity(self, sample: AgentDataSample) -> bool:
+        question_text = sample.question.lower()
+        expected_entity = self._entity_from_tool_query(sample)
+        if expected_entity.lower() not in question_text:
+            return False
+        for seed in self._seeds:
+            if seed.entity != expected_entity and seed.entity.lower() in question_text:
+                return False
+        if "use synthesis round" in question_text:
+            return False
+        return True
+
+    def _trajectory_matches_expected_evidence(self, sample: AgentDataSample) -> bool:
+        return self._trajectory_contains_expected_results(
+            sample.trajectory,
+            sample.tool_calls,
+        )
+
+    def _trajectory_contains_expected_results(
+        self, trajectory: Sequence[str], tool_calls: Sequence[ToolCall]
+    ) -> bool:
+        trajectory_text = " ".join(trajectory).lower()
+        expected_results = [call.result.lower() for call in tool_calls]
+        return all(result in trajectory_text for result in expected_results)
+
+    def _trajectory_contains_expected_tool_calls(
+        self, trajectory: Sequence[str], tool_calls: Sequence[ToolCall]
+    ) -> bool:
+        action_queries = [
+            self._normalize_tool_query(query)
+            for line in trajectory
+            for query in ACTION_QUERY_RE.findall(line)
+        ]
+        expected_queries = [
+            self._normalize_tool_query(call.query)
+            for call in tool_calls
+            if call.tool.lower() == "wikidata_lookup"
+        ]
+        return all(query in action_queries for query in expected_queries)
+
+    def _normalize_tool_query(self, query: str) -> str:
+        return re.sub(r"\s*,\s*", ", ", " ".join(query.lower().split()))
+
     def _build_metrics(
         self,
         rows: list[AgentDataSample],
@@ -580,6 +831,7 @@ class AgentDataFactory:
                 dedup_rate=1.0,
                 solvability_rate=0.0,
                 evidence_hit_rate=0.0,
+                evidence_faithfulness_rate=0.0,
                 tool_success_rate=0.0,
                 trajectory_valid_rate=0.0,
                 teacher_attempted=0,
@@ -587,6 +839,7 @@ class AgentDataFactory:
                 teacher_failed=0,
                 teacher_fallback_rate=0.0,
                 teacher_trajectory_repaired=0,
+                question_repaired=0,
                 teacher_difficulty_normalized=0,
             )
 
@@ -613,6 +866,7 @@ class AgentDataFactory:
             dedup_rate=round((total - duplicate_count) / total, 4),
             solvability_rate=rate("answer_supported"),
             evidence_hit_rate=rate("evidence_coverage"),
+            evidence_faithfulness_rate=rate("evidence_faithfulness"),
             tool_success_rate=rate("tool_success"),
             trajectory_valid_rate=rate("trajectory_valid"),
             teacher_attempted=teacher_attempted,
@@ -627,6 +881,9 @@ class AgentDataFactory:
                 1
                 for sample in verified
                 if sample.source.get("teacher_trajectory_repaired")
+            ),
+            question_repaired=sum(
+                1 for sample in verified if sample.source.get("question_repaired")
             ),
             teacher_difficulty_normalized=sum(
                 1 for sample in verified if "teacher_difficulty_raw" in sample.source

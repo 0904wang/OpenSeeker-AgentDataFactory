@@ -56,6 +56,26 @@ SEED_FACTS: tuple[SeedFact, ...] = (
     SeedFact("Edsger Dijkstra", "Rotterdam", "Netherlands", "shortest path algorithms"),
     SeedFact("Guido van Rossum", "Haarlem", "Netherlands", "Python programming"),
     SeedFact("Yukihiro Matsumoto", "Osaka", "Japan", "Ruby programming"),
+    SeedFact("James Clerk Maxwell", "Edinburgh", "United Kingdom", "electromagnetism"),
+    SeedFact("Max Planck", "Kiel", "Germany", "quantum theory"),
+    SeedFact("Erwin Schrodinger", "Vienna", "Austria", "quantum mechanics"),
+    SeedFact("Werner Heisenberg", "Wurzburg", "Germany", "uncertainty principle"),
+    SeedFact("Paul Dirac", "Bristol", "United Kingdom", "quantum mechanics"),
+    SeedFact("Charles Babbage", "London", "United Kingdom", "computing machinery"),
+    SeedFact("Mary Anning", "Lyme Regis", "United Kingdom", "paleontology"),
+    SeedFact("Maryam Mirzakhani", "Tehran", "Iran", "geometry"),
+    SeedFact("C. V. Raman", "Tiruchirappalli", "India", "light scattering"),
+    SeedFact("Sophie Germain", "Paris", "France", "number theory"),
+    SeedFact("Emilie du Chatelet", "Paris", "France", "physics translation"),
+    SeedFact("Florence Nightingale", "Florence", "Italy", "modern nursing"),
+    SeedFact("Blaise Pascal", "Clermont-Ferrand", "France", "probability theory"),
+    SeedFact("Gottfried Wilhelm Leibniz", "Leipzig", "Germany", "calculus"),
+    SeedFact("Rene Descartes", "La Haye en Touraine", "France", "analytic geometry"),
+    SeedFact("Dmitri Mendeleev", "Tobolsk", "Russia", "periodic table"),
+    SeedFact("Gregor Mendel", "Hyncice", "Czech Republic", "genetics"),
+    SeedFact("Louis Pasteur", "Dole", "France", "microbiology"),
+    SeedFact("Alexander Fleming", "Lochfield", "United Kingdom", "penicillin"),
+    SeedFact("Mae Jemison", "Decatur", "United States", "spaceflight"),
 )
 
 
@@ -66,11 +86,16 @@ TASK_VARIANTS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def build_wikidata_seed_rows(limit: int | None = None) -> list[dict[str, Any]]:
+def build_wikidata_seed_rows(
+    limit: int | None = None, offset: int = 0
+) -> list[dict[str, Any]]:
+    if offset < 0:
+        raise ValueError("offset must be non-negative")
     rows: list[dict[str, Any]] = []
     for fact in SEED_FACTS:
         for task_type, relation, suffix in TASK_VARIANTS:
             rows.append(_build_seed_row(fact, task_type, relation, suffix))
+    rows = rows[offset:]
     if limit is not None:
         if limit < 1:
             raise ValueError("limit must be positive")

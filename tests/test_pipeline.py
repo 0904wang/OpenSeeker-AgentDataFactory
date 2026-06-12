@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from threading import Lock
 from time import sleep
@@ -15,10 +16,10 @@ class FakeTeacherBackend:
             "difficulty": "hard",
             "trajectory": [
                 "Thought: Use the teacher-provided tool plan.",
-                "Action: wikidata_lookup[Ada Lovelace birthplace]",
+                "Action: wikidata_lookup[Ada Lovelace, P19]",
                 "Observation: London",
                 "Thought: Resolve London to its country.",
-                "Action: wikidata_lookup[London country]",
+                "Action: wikidata_lookup[London, P17]",
                 "Observation: United Kingdom",
                 "Final: United Kingdom",
             ],
@@ -30,11 +31,49 @@ class FakeInvalidTrajectoryTeacherBackend:
 
     def complete_json(self, messages):
         return {
-            "question": "Teacher drafted question with invalid trajectory?",
+            "question": "Teacher drafted Ada Lovelace question with invalid trajectory?",
             "difficulty": "hard",
             "trajectory": [
                 "Find Ada Lovelace's birthplace: London.",
                 "Find the country: United Kingdom.",
+            ],
+        }
+
+
+class FakeUnfaithfulTrajectoryTeacherBackend:
+    name = "fake-unfaithful-trajectory"
+
+    def complete_json(self, messages):
+        return {
+            "question": "Teacher drafted Ada Lovelace question with plausible but unfaithful evidence?",
+            "difficulty": "hard",
+            "trajectory": [
+                "Thought: Find Ada Lovelace's birthplace.",
+                "Action: wikidata_lookup[Ada Lovelace, P19]",
+                "Observation: Cambridge",
+                "Thought: Resolve Cambridge to its country.",
+                "Action: wikidata_lookup[Cambridge, P17]",
+                "Observation: United Kingdom",
+                "Final: United Kingdom",
+            ],
+        }
+
+
+class FakeNaturalPropertyTrajectoryTeacherBackend:
+    name = "fake-natural-property-trajectory"
+
+    def complete_json(self, messages):
+        return {
+            "question": "Teacher drafted Ada Lovelace question with natural tool keys?",
+            "difficulty": "hard",
+            "trajectory": [
+                "Thought: Find Ada Lovelace's birthplace.",
+                "Action: wikidata_lookup[Ada Lovelace birthplace]",
+                "Observation: London",
+                "Thought: Resolve London to its country.",
+                "Action: wikidata_lookup[London country]",
+                "Observation: United Kingdom",
+                "Final: United Kingdom",
             ],
         }
 
@@ -55,10 +94,29 @@ class FakeInvalidDifficultyTeacherBackend:
             "difficulty": "intermediate",
             "trajectory": [
                 "Thought: Use the teacher-provided tool plan.",
-                "Action: wikidata_lookup[Ada Lovelace birthplace]",
+                "Action: wikidata_lookup[Ada Lovelace, P19]",
                 "Observation: London",
                 "Thought: Resolve London to its country.",
-                "Action: wikidata_lookup[London country]",
+                "Action: wikidata_lookup[London, P17]",
+                "Observation: United Kingdom",
+                "Final: United Kingdom",
+            ],
+        }
+
+
+class FakeWrongEntityQuestionTeacherBackend:
+    name = "fake-wrong-entity-question"
+
+    def complete_json(self, messages):
+        return {
+            "question": "What country was Albert Einstein born in?",
+            "difficulty": "medium",
+            "trajectory": [
+                "Thought: Use the seed entity, not the drafted question.",
+                "Action: wikidata_lookup[Ada Lovelace, P19]",
+                "Observation: London",
+                "Thought: Resolve London to its country.",
+                "Action: wikidata_lookup[London, P17]",
                 "Observation: United Kingdom",
                 "Final: United Kingdom",
             ],
@@ -76,14 +134,14 @@ class FakeRepeatedQuestionTeacherBackend:
         intermediate = payload["intermediate"]
         answer = payload["answer"]
         return {
-            "question": "Which country is connected to the birthplace?",
+            "question": f"Which country is tied to {entity}'s birthplace?",
             "difficulty": "medium",
             "trajectory": [
                 "Thought: Use the lookup trajectory.",
-                f"Action: wikidata_lookup[{entity} birthplace]",
+                f"Action: wikidata_lookup[{entity}, P19]",
                 f"Observation: {intermediate}",
                 "Thought: Resolve country.",
-                f"Action: wikidata_lookup[{intermediate} country]",
+                f"Action: wikidata_lookup[{intermediate}, P17]",
                 f"Observation: {answer}",
                 f"Final: {answer}",
             ],
@@ -116,10 +174,10 @@ class FakeSlowTeacherBackend:
                 "difficulty": "medium",
                 "trajectory": [
                     "Thought: Use the lookup trajectory.",
-                    f"Action: wikidata_lookup[{entity} birthplace]",
+                    f"Action: wikidata_lookup[{entity}, P19]",
                     f"Observation: {intermediate}",
                     "Thought: Resolve country.",
-                    f"Action: wikidata_lookup[{intermediate} country]",
+                    f"Action: wikidata_lookup[{intermediate}, P17]",
                     f"Observation: {answer}",
                     f"Final: {answer}",
                 ],
@@ -170,6 +228,56 @@ def test_factory_rejects_samples_with_unsupported_answer():
     assert metrics.rejected == 1
 
 
+def test_factory_rejects_samples_with_unfaithful_intermediate_observation():
+    factory = AgentDataFactory.from_demo_knowledge_graph()
+    seed = factory.seed_expand(count=1)[0]
+    task = factory.evolve_task(seed)
+    sample = factory.generate_trajectory(task)
+    bad = AgentDataSample.from_json_dict(sample.to_json_dict())
+    bad.trajectory = [
+        "Thought: Identify the entity's birthplace.",
+        "Action: wikidata_lookup[Ada Lovelace, P19]",
+        "Observation: Cambridge",
+        "Thought: Resolve the country from the intermediate location.",
+        "Action: wikidata_lookup[Cambridge country]",
+        "Observation: United Kingdom",
+        "Final: United Kingdom",
+    ]
+
+    accepted, rejected, metrics = factory.verify_and_filter([bad])
+
+    assert accepted == []
+    assert len(rejected) == 1
+    assert rejected[0].verifier_result.checks["evidence_faithfulness"] is False
+    assert "evidence_faithfulness" in rejected[0].verifier_result.reasons
+    assert metrics.evidence_faithfulness_rate == 0.0
+
+
+def test_factory_accepts_samples_with_faithful_intermediate_and_answer_observations():
+    factory = AgentDataFactory.from_demo_knowledge_graph()
+    sample = factory.generate_trajectory(factory.evolve_task(factory.seed_expand(count=1)[0]))
+
+    accepted, rejected, metrics = factory.verify_and_filter([sample])
+
+    assert len(accepted) == 1
+    assert rejected == []
+    assert accepted[0].verifier_result.checks["evidence_faithfulness"] is True
+    assert metrics.evidence_faithfulness_rate == 1.0
+
+
+def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
+    factory = AgentDataFactory.from_demo_knowledge_graph()
+    task = factory.evolve_task(factory.seed_expand(count=1)[0])
+
+    assert [tool_call.query for tool_call in task.tool_plan] == [
+        "Ada Lovelace, P19",
+        "London, P17",
+    ]
+    sample = factory.generate_trajectory(task)
+    assert "Action: wikidata_lookup[Ada Lovelace, P19]" in sample.trajectory
+    assert "Action: wikidata_lookup[London, P17]" in sample.trajectory
+
+
 def test_factory_exports_jsonl_sft_rl_and_summary(tmp_path: Path):
     factory = AgentDataFactory.from_demo_knowledge_graph()
     samples = [
@@ -217,6 +325,55 @@ def test_factory_loads_seed_file_and_repeats_it_to_requested_count():
     ]
 
 
+def test_factory_seed_expand_can_start_after_completed_variants():
+    factory = AgentDataFactory.from_seed_file(Path("tests/fixtures/seeds.jsonl"))
+
+    seeds = factory.seed_expand(count=3, start_index=2)
+
+    assert [seed.id for seed in seeds] == [
+        "wikidata-ada-3",
+        "wikidata-curie-4",
+        "wikidata-ada-5",
+    ]
+    assert [seed.variant_index for seed in seeds] == [2, 2, 3]
+
+
+def test_factory_uses_per_seed_variant_index_for_unique_seed_rows(tmp_path: Path):
+    seed_path = tmp_path / "unique-seeds.jsonl"
+    rows = []
+    for index in range(5):
+        rows.append(
+            {
+                "id": f"unique-{index}",
+                "task_type": "multi_hop_qa",
+                "entity": f"Person {index}",
+                "relation": "birthplace_country",
+                "intermediate": f"City {index}",
+                "answer": f"Country {index}",
+                "evidence": [
+                    f"Person {index} was born in City {index}.",
+                    f"City {index} is located in Country {index}.",
+                ],
+                "noisy_context": [f"Person {index} is known for unrelated work."],
+            }
+    )
+    seed_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    factory = AgentDataFactory.from_seed_file(seed_path)
+
+    expanded = factory.seed_expand(count=5)
+    accepted, rejected, metrics = factory.generate_verified(count=5)
+
+    assert [seed.variant_index for seed in expanded] == [1, 1, 1, 1, 1]
+    assert rejected == []
+    assert metrics.accepted == 5
+    assert metrics.question_repaired == 0
+    assert all("Use synthesis round" not in sample.question for sample in accepted)
+    assert all("question_repaired" not in sample.source for sample in accepted)
+
+
 def test_factory_uses_teacher_backend_draft_when_provided():
     factory = AgentDataFactory.from_demo_knowledge_graph(
         teacher_backend=FakeTeacherBackend()
@@ -243,17 +400,74 @@ def test_factory_repairs_invalid_teacher_trajectory_with_deterministic_react():
 
     assert rejected == []
     assert metrics.accepted == 1
-    assert accepted[0].question == "Teacher drafted question with invalid trajectory?"
+    assert accepted[0].question == (
+        "Teacher drafted Ada Lovelace question with invalid trajectory?"
+    )
     assert accepted[0].trajectory == [
         "Thought: Identify the entity's birthplace.",
-        "Action: wikidata_lookup[Ada Lovelace birthplace]",
+        "Action: wikidata_lookup[Ada Lovelace, P19]",
         "Observation: London",
         "Thought: Resolve the country from the intermediate location.",
-        "Action: wikidata_lookup[London country]",
+        "Action: wikidata_lookup[London, P17]",
         "Observation: United Kingdom",
         "Final: United Kingdom",
     ]
     assert accepted[0].source["teacher_trajectory_repaired"] is True
+
+
+def test_factory_repairs_unfaithful_teacher_trajectory_with_deterministic_react():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeUnfaithfulTrajectoryTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert metrics.evidence_faithfulness_rate == 1.0
+    assert metrics.teacher_trajectory_repaired == 1
+    assert accepted[0].question == (
+        "Teacher drafted Ada Lovelace question with plausible but unfaithful evidence?"
+    )
+    assert accepted[0].trajectory == [
+        "Thought: Identify the entity's birthplace.",
+        "Action: wikidata_lookup[Ada Lovelace, P19]",
+        "Observation: London",
+        "Thought: Resolve the country from the intermediate location.",
+        "Action: wikidata_lookup[London, P17]",
+        "Observation: United Kingdom",
+        "Final: United Kingdom",
+    ]
+    assert accepted[0].source["teacher_trajectory_repaired"] is True
+    assert accepted[0].source["teacher_trajectory_repair_reason"] == (
+        "evidence_faithfulness"
+    )
+    assert accepted[0].verifier_result.checks["evidence_faithfulness"] is True
+
+
+def test_factory_repairs_teacher_trajectory_without_canonical_tool_calls():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeNaturalPropertyTrajectoryTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert metrics.teacher_trajectory_repaired == 1
+    assert accepted[0].trajectory == [
+        "Thought: Identify the entity's birthplace.",
+        "Action: wikidata_lookup[Ada Lovelace, P19]",
+        "Observation: London",
+        "Thought: Resolve the country from the intermediate location.",
+        "Action: wikidata_lookup[London, P17]",
+        "Observation: United Kingdom",
+        "Final: United Kingdom",
+    ]
+    assert accepted[0].source["teacher_trajectory_repaired"] is True
+    assert accepted[0].source["teacher_trajectory_repair_reason"] == (
+        "tool_call_coverage"
+    )
 
 
 def test_factory_falls_back_when_teacher_backend_fails():
@@ -301,6 +515,63 @@ def test_factory_normalizes_invalid_teacher_difficulty():
     assert accepted[0].source["teacher_difficulty_raw"] == "intermediate"
 
 
+def test_factory_repairs_teacher_question_with_foreign_entity_before_export():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeWrongEntityQuestionTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=1)
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].question == "What country was Ada Lovelace born in?"
+    assert accepted[0].source["question_repaired"] is True
+    assert accepted[0].source["question_repair_reason"] == "entity_alignment"
+    assert accepted[0].source["original_question"] == (
+        "What country was Albert Einstein born in?"
+    )
+    assert accepted[0].verifier_result.checks["question_entity_alignment"] is True
+
+
+def test_factory_does_not_emit_synthetic_round_marker_for_repeated_variants():
+    factory = AgentDataFactory.from_demo_knowledge_graph(
+        teacher_backend=FakeFailingTeacherBackend()
+    )
+
+    accepted, rejected, metrics = factory.generate_verified(count=13)
+
+    assert rejected == []
+    assert metrics.accepted == 13
+    assert metrics.question_repaired == 0
+    assert all("Use synthesis round" not in sample.question for sample in accepted)
+    assert all("question_repaired" not in sample.source for sample in accepted)
+    assert all(
+        sample.verifier_result.checks["question_entity_alignment"] is True
+        for sample in accepted
+    )
+
+
+def test_verify_and_filter_repairs_loaded_raw_sample_question_alignment():
+    factory = AgentDataFactory.from_demo_knowledge_graph()
+    sample = factory.generate_trajectory(factory.evolve_task(factory.seed_expand(count=1)[0]))
+    raw = AgentDataSample.from_json_dict(sample.to_json_dict())
+    raw.question = "What country was Albert Einstein born in?"
+    raw.source = dict(raw.source)
+    raw.source["teacher_backend"] = "openai-compatible"
+
+    accepted, rejected, metrics = factory.verify_and_filter([raw])
+
+    assert rejected == []
+    assert metrics.accepted == 1
+    assert accepted[0].question == "What country was Ada Lovelace born in?"
+    assert accepted[0].source["question_repaired"] is True
+    assert accepted[0].source["question_repair_reason"] == "entity_alignment"
+    assert accepted[0].source["original_question"] == (
+        "What country was Albert Einstein born in?"
+    )
+    assert accepted[0].verifier_result.checks["question_entity_alignment"] is True
+
+
 def test_factory_rewrites_duplicate_teacher_questions_before_filtering():
     factory = AgentDataFactory.from_demo_knowledge_graph(
         teacher_backend=FakeRepeatedQuestionTeacherBackend()
@@ -317,12 +588,18 @@ def test_factory_rewrites_duplicate_teacher_questions_before_filtering():
     rewritten = [
         sample for sample in accepted if sample.source.get("duplicate_question_rewritten")
     ]
-    assert len(rewritten) == 5
+    assert len(rewritten) == 3
     assert all(
-        sample.source["original_question"]
-        == "Which country is connected to the birthplace?"
+        sample.source["original_question"].startswith("Which country is tied to ")
         for sample in rewritten
     )
+    assert all(
+        "question_repaired" not in sample.source
+        for sample in accepted
+    )
+    assert all("Disambiguate this sample" not in sample.question for sample in accepted)
+    assert all("sample id" not in sample.question for sample in accepted)
+    assert all("seed " not in sample.question.lower() for sample in accepted)
     assert all(
         sample.verifier_result.checks["not_duplicate"] is True
         for sample in accepted
