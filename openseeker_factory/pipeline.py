@@ -438,6 +438,11 @@ class AgentDataFactory:
 
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
+        source["data_version"] = "canonical-v3"
+        source["observation_grounding"] = "gold_tool_results"
+        source["observation_grounding_policy"] = (
+            "observations_must_match_expected_tool_results"
+        )
         default_trajectory = self._default_trajectory(task)
         if task.trajectory_draft is None:
             trajectory = default_trajectory
@@ -689,7 +694,12 @@ class AgentDataFactory:
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are a ReAct agent that must cite tool observations.",
+                            "content": (
+                                "You are a ReAct agent that must cite tool observations. "
+                                "Actions must use the provided lookup schema, and "
+                                "Observation lines must match lookup observations from "
+                                "the evidence instead of memorized or localized facts."
+                            ),
                         },
                         {"role": "user", "content": sample.question},
                         {"role": "assistant", "content": "\n".join(sample.trajectory)},
@@ -747,6 +757,7 @@ class AgentDataFactory:
                 call.result.lower() in evidence_text for call in sample.tool_calls
             ),
             "evidence_faithfulness": evidence_faithful,
+            "observation_faithfulness": evidence_faithful,
             "question_entity_alignment": self._question_matches_expected_entity(sample),
             "tool_success": (
                 sample.answer.lower() in tool_results

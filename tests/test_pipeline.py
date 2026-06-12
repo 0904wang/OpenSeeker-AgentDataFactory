@@ -265,6 +265,18 @@ def test_factory_accepts_samples_with_faithful_intermediate_and_answer_observati
     assert metrics.evidence_faithfulness_rate == 1.0
 
 
+def test_factory_marks_canonical_v3_observation_grounding_metadata():
+    factory = AgentDataFactory.from_demo_knowledge_graph()
+
+    accepted, rejected, _ = factory.generate_verified(count=1)
+
+    assert rejected == []
+    sample = accepted[0]
+    assert sample.source["data_version"] == "canonical-v3"
+    assert sample.source["observation_grounding"] == "gold_tool_results"
+    assert sample.verifier_result.checks["observation_faithfulness"] is True
+
+
 def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
     factory = AgentDataFactory.from_demo_knowledge_graph()
     task = factory.evolve_task(factory.seed_expand(count=1)[0])
@@ -300,8 +312,12 @@ def test_factory_exports_jsonl_sft_rl_and_summary(tmp_path: Path):
 
     restored = factory.load_jsonl(jsonl_path)
     assert restored == accepted
-    assert sft_path.read_text(encoding="utf-8").splitlines()[0].startswith('{"id":')
-    assert '"prompt"' in rl_path.read_text(encoding="utf-8")
+    sft_row = json.loads(sft_path.read_text(encoding="utf-8").splitlines()[0])
+    assert sft_row["id"] == accepted[0].id
+    assert "match lookup observations" in sft_row["messages"][0]["content"]
+    rl_row = json.loads(rl_path.read_text(encoding="utf-8").splitlines()[0])
+    assert "prompt" in rl_row
+    assert rl_row["verifier_checks"]["observation_faithfulness"] is True
     assert "total,accepted,rejected" in summary_path.read_text(encoding="utf-8")
     assert '"verifier_result"' in trace_path.read_text(encoding="utf-8")
 
