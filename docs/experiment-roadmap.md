@@ -2,6 +2,33 @@
 
 This roadmap converts OpenSeeker AgentDataFactory from a verified local scaffold into a resume-grade remote experiment project. Each completed experiment must have a local record under `docs/experiments/`.
 
+## Current Milestone - v6 Closed Loop
+
+Status: completed and recorded.
+
+The project now has a verified closed loop:
+
+```text
+harder heldout design -> failure audit -> targeted synthetic data -> Qwen3-8B LoRA SFT -> regression evaluation
+```
+
+Current best result:
+
+```text
+2k mixed v3/v4/v5blind -> v6 observation_faithfulness 0.945
+2.4k mixed v3/v4/v5blind/v6 -> v6 observation_faithfulness 0.985
+v4 and v5 heldout core metrics stayed at 1.0
+```
+
+Key records:
+
+```text
+docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v6-heldout200-eval.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v4-v5-regression-eval.md
+```
+
+Do not treat this as completion of 20k/50k scale or RL validation. The next high-value experiment is relation-diverse v7, not simply more same-template data.
+
 ## Phase 0 - Local Contract Validation
 
 Goal: prove that schema, generation, filtering, and exports work.
@@ -153,3 +180,29 @@ Acceptance:
 - compare baseline, old 5k, new 20k, and optional new 50k
 - record model, commit, env, GPUs, command, logs, checkpoints, and metrics
 - only then update resume with improvement numbers
+
+Status update:
+
+- Qwen3-8B LoRA SFT on 2k and 2.4k mixed synthetic data is completed.
+- v4/v5/v6 heldout evaluations are completed.
+- 20k/50k data scale and RL validation remain future work.
+
+## Phase 6 - v7 Relation-diverse Heldout
+
+Goal: reduce overfitting to the current birthplace-to-country path family.
+
+Candidate relation paths:
+
+- person birthplace -> country
+- person educated at -> institution country
+- person employer -> headquarters country
+- award -> conferring organization country
+- publication venue -> country
+
+Acceptance:
+
+- v7 user prompts hide explicit relation IDs and tool schemas, similar to v6
+- deterministic verifier checks exact intermediate evidence for each relation path
+- heldout includes distractor relation intents
+- evaluation reports answer, tool-call, trajectory, observation-faithfulness, and hallucination metrics
+- targeted SFT improves v7 observation faithfulness without regressing v4/v5/v6

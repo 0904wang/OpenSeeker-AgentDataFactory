@@ -1,57 +1,114 @@
 # Resume Material
 
-Use this file to keep resume wording honest. Move bullets from "planned" to "verified" only after a local experiment record proves the result.
+Use this file to keep resume wording honest. Only use claims that are backed by local records under `docs/experiments/`.
 
-## Current Verified Version
+## Verified Project Summary
 
-Safe to say now:
+OpenSeeker AgentDataFactory is now a verified synthetic-data and SFT loop for tool-use / retrieval agents:
 
-- Built a local OpenSeeker AgentDataFactory scaffold for multi-hop QA, tool-use QA, and noisy-context retrieval QA, with ReAct-style trajectories and deterministic verifier filtering.
-- Added a seed-file driven generation entrypoint that can scale the same schema to baseline-size runs while preserving deterministic provenance and duplicate filtering.
-- Defined a unified JSONL schema covering `id`, `task_type`, `question`, `answer`, `gold_evidence`, `tool_calls`, `trajectory`, `verifier_result`, `difficulty`, `source`, and `quality_score`.
-- Implemented exports for Agent SFT conversations, reward-format samples, trace JSONL, and summary CSV, with pytest coverage for schema, pipeline, exports, and CLI behavior.
-- Added a remote experiment safety contract for a shared 8-GPU lab server, including preflight, dry run, tmux launch, GPU limits, approved paths, and local experiment recording.
+- Data factory covers multi-hop QA, tool-use QA, noisy-context retrieval QA, ReAct trajectory export, verifier filtering, and LLaMA-Factory SFT export.
+- Remote workflow is reproducible on the lab GPU server with preflight checks, narrow file sync, project-local conda env, tmux launches, logs, checkpoints, and local experiment records.
+- Current best SFT run uses Qwen3-8B + LoRA on 2.4k mixed synthetic rows.
+- Main measured improvement: v6 heldout observation faithfulness improved from `0.945` to `0.985` while v4/v5 heldouts stayed at all core metrics `1.0`.
 
-## After Remote Smoke Test
+## Resume Bullets: Chinese
 
-Use only after a local record proves the remote run:
-
-- Ported the OpenSeeker AgentDataFactory pipeline to a shared GPU server and validated the end-to-end dry run under a constrained remote workflow with preflight, tmux monitoring, and local experiment records.
-
-## After 5k / 20k Data Runs
-
-Template:
-
-- Generated `<N>` synthetic Agent SFT samples covering multi-hop retrieval, tool-use QA, and noisy-context reasoning; applied verifier-based filtering over answer support, evidence coverage, tool success, trajectory validity, and deduplication.
-- Recorded quality metrics including accepted rate `<x>%`, evidence hit rate `<x>%`, tool success rate `<x>%`, trajectory validity `<x>%`, and manual sample pass rate `<x>%` over `<n>` audited samples.
-
-## After SFT / RL Validation
-
-Template:
-
-- Fine-tuned Qwen `<7B/14B>` with verified OpenSeeker synthetic data and compared baseline, old 5k data, and new `<20k/50k>` data on multi-hop completion, tool-call success, and hallucination metrics.
-- Improved `<metric>` from `<baseline>` to `<result>` while preserving trace-level evidence and ablation logs for verifier, Evol-Instruct, and noisy-context components.
-
-## Current One-Page Resume Replacement Draft
-
-This can replace the old `OpenSeeker 数据合成` project only if you want to emphasize system construction before remote results:
+Use these bullets for a resume project entry:
 
 ```text
-OpenSeeker AgentDataFactory                                                        Agent SFT / 数据合成
+OpenSeeker AgentDataFactory                                      Agent SFT / 数据合成
 个人项目
-• 面向多跳检索、工具调用与 noisy-context reasoning 设计可验证 Agent 数据合成流水线，覆盖 seed_expand、evolve_task、ReAct 轨迹生成、verifier 过滤与 trace 记录。
-• 统一 JSONL 数据协议，包含 question、gold_evidence、tool_calls、trajectory、verifier_result 与 quality_score，并支持 Agent SFT conversation、RL reward-format、summary CSV 导出。
-• 参考 Self-Instruct/Magpie、WizardLM/Evol-Instruct、ToolBench/AgentTuning 等路线设计数据扩展与质量筛选方案，补充远程 4 卡实验规范、dry-run 门禁与实验记录模板。
+- 构建面向多跳检索、工具调用与 noisy-context QA 的可验证 Agent 数据合成流水线，统一输出 ReAct 轨迹、tool calls、gold evidence、verifier result、SFT conversation 与评测 trace/summary。
+- 设计 canonical-v4/v5/v6 数据版本与 deterministic verifier，覆盖答案可解性、工具调用覆盖率、Observation 证据忠实度、轨迹格式有效性和幻觉代理指标；通过 harder heldout 暴露最终答案正确但中间证据漂移的问题。
+- 使用远程 4 卡 GPU 完成 Qwen3-8B LoRA SFT：先在 2k mixed v3/v4/v5blind 数据上训练，再针对 v6 blind tool-choice 失败模式补充 400 条定向合成数据，形成 2.4k mixed SFT 数据集。
+- 在 v6 blind tool-choice heldout200 上将 Observation faithfulness 从 0.945 提升到 0.985，失败样本从 11/200 降至 3/200；同时 v4 heldout200 与 v5 blind-hard heldout200 的 exact/tool/trajectory/correct 等核心指标保持 1.0。
+- 制定共享 GPU 远程实验规范，固化 preflight、dry run、tmux 启动、日志监控、checkpoint 管理和本地实验记录流程，保证数据生成、训练和评测结果可复现、可审计。
 ```
 
-## Stronger Draft After Experiments
-
-Do not use until metrics are available:
+Shorter 3-bullet version:
 
 ```text
-OpenSeeker AgentDataFactory                                                        Agent SFT / 数据合成
-个人项目
-• 基于 Wikidata 事实图谱与工具调用环境构建可验证 Agent 数据合成流水线，结合 Self-Instruct/Evol-Instruct、ReAct 轨迹生成与 verifier rejection sampling，产出 <N> 条多跳检索/工具调用 SFT 数据。
-• 设计 evidence verifier、tool execution verifier 与 trajectory verifier，统计可解率、轨迹有效率、证据命中率与人工抽样通过率，并通过 ablation 分析数据复杂度和过滤策略影响。
-• 使用 <GPU 配置> 完成本地/远程批量生成与 Qwen <7B/14B> LoRA SFT；相比原 5k 数据基线，在 <metric> 上从 <baseline> 提升至 <result>。
+- 构建 OpenSeeker AgentDataFactory，面向多跳检索、工具调用与 noisy-context QA 生成可验证 ReAct SFT 数据，统一导出 samples、SFT conversations、RL reward format、trace JSONL 与 summary CSV。
+- 设计 v4/v5/v6 harder heldout 与 evidence/tool/trajectory verifier，定位“最终答案正确但 Observation 中间证据漂移”的失败模式，并用定向 v6 合成数据进行闭环修复。
+- 使用远程 4 卡完成 Qwen3-8B LoRA SFT；2.4k mixed 数据相比 2k mixed 基线将 v6 Observation faithfulness 从 0.945 提升到 0.985，且 v4/v5 heldout 核心指标保持 1.0。
+```
+
+## Resume Bullets: English
+
+```text
+OpenSeeker AgentDataFactory                                      Agent SFT / Synthetic Data
+Personal Project
+- Built a verifiable synthetic-data pipeline for multi-hop retrieval, tool-use QA, and noisy-context QA agents, exporting ReAct trajectories, tool calls, gold evidence, verifier results, SFT conversations, and evaluation traces.
+- Designed canonical-v4/v5/v6 data versions and deterministic verifiers for answer support, tool-call coverage, observation faithfulness, trajectory validity, and hallucination proxy metrics.
+- Ran Qwen3-8B LoRA SFT on a remote 4-GPU server with a 2.4k mixed synthetic dataset; targeted v6 data improved blind tool-choice heldout observation faithfulness from 0.945 to 0.985 while v4/v5 heldout core metrics remained 1.0.
+- Established a reproducible remote experiment workflow with preflight checks, dry runs, tmux launches, log monitoring, checkpoint paths, and local experiment records.
+```
+
+## Interview Talking Points
+
+Use this structure when explaining the project:
+
+1. The original project only had simple multi-hop QA synthesis, so I reframed it as an Agentic Synthetic Data Factory.
+2. I did not just generate more data; I built verifiers and harder heldouts to find where the model was wrong.
+3. The key failure was evidence drift: the final country answer was correct, but the `Observation:` line sometimes used an unsupported intermediate location.
+4. I generated targeted v6 blind tool-choice data and retrained Qwen3-8B LoRA.
+5. The fix improved observation faithfulness from 0.945 to 0.985 and did not regress previous v4/v5 heldouts.
+
+Concrete example:
+
+```text
+Before v6-targeted training, the model sometimes wrote `Observation: New York` instead of `New York City`, or `Observation: Tokyo` instead of `Osaka`, while still answering `United States` or `Japan` correctly. The v6 verifier made this visible because it scores intermediate tool observations, not just final answer accuracy.
+```
+
+## Verified Numbers
+
+| Run | Heldout | Exact | Tool success | Observation faithfulness | Trajectory valid | Hallucination |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2k mixed v3/v4/v5blind | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.945 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.985 | 1.000 | 0.000 |
+
+Training record:
+
+```text
+Model: Qwen3-8B
+Method: LoRA SFT
+Data: 2.4k mixed synthetic rows
+GPU: 4 remote GPUs
+Epochs: 1
+Optimization steps: 72
+Runtime: 134.378s
+Train loss: 0.3729
+```
+
+## Evidence Records
+
+Key local records:
+
+```text
+docs/experiments/2026-06-13-canonical-v6-blind-tool-choice-hard-heldout.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v6-blind-tool-choice-heldout200-eval.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v3-v4-v5blind-v6-data-smoke.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v3-v4-v5blind-v6-sft-gpu0125.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v6-heldout200-eval.md
+docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v4-v5-regression-eval.md
+```
+
+## Do Not Claim Yet
+
+Do not claim:
+
+- 20k or 50k data scale
+- GRPO / verl / RL gains
+- broad public benchmark improvements
+- Qwen 14B or 32B training results
+- production-grade general tool-use ability
+
+Accurate limitation:
+
+```text
+The verified loop is currently strongest on a controlled Wikidata birthplace-to-country reasoning family. The next planned step is a relation-diverse v7 split with more tool-choice paths.
 ```

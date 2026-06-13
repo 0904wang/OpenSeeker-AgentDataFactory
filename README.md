@@ -9,11 +9,11 @@ OpenSeeker AgentDataFactory is a resume-oriented but runnable synthetic data pro
 - verifier-based filtering
 - SFT and reward-format export
 
-The local implementation is intentionally small and deterministic. It proves the project contract, schema, exports, and verification loop before moving long-running generation or training to the remote GPU server.
+The implementation is intentionally compact and reproducible. It now covers the full experiment loop from deterministic data synthesis to remote LoRA SFT and heldout evaluation on a shared GPU server.
 
 ## Current Status
 
-Verified locally:
+Verified:
 
 - `seed_expand`
 - `evolve_task`
@@ -25,14 +25,39 @@ Verified locally:
 - trace JSONL and summary CSV export
 - CLI demo run
 - pytest coverage for schema, pipeline, exports, and CLI
+- remote safety workflow with preflight, narrow sync, tmux launch, logs, checkpoints, and local experiment records
+- Qwen3-8B LoRA SFT on mixed OpenSeeker synthetic data
+- heldout evaluation with answer, tool-call, trajectory, hallucination, and observation-faithfulness metrics
 
-Not yet claimed as completed:
+Current best recorded experiment:
+
+```text
+Model: Qwen3-8B + LoRA
+Data: 2.4k mixed OpenSeeker SFT rows
+Mix: 800 canonical-v3 + 800 canonical-v4 + 400 canonical-v5-blind-hard + 400 canonical-v6-blind-tool-choice-hard
+Training: 4 GPUs, 1 epoch, 72 optimization steps
+Checkpoint: /data/wzl/OpenSeeker-AgentDataFactory/checkpoints/qwen3-8b-openseeker-sft-2p4k-mixed-v3-v4-v5blind-v6blindtoolchoice
+```
+
+Heldout results:
+
+| Adapter | Heldout | Exact | Tool success | Observation faithfulness | Trajectory valid | Hallucination |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2k mixed v3/v4/v5blind | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.945 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.985 | 1.000 | 0.000 |
+
+The v6 loop is the main project milestone: a harder heldout exposed observation-level evidence drift, targeted v6 synthetic data reduced failures from 11/200 to 3/200, and v4/v5 regression evaluations stayed saturated.
+
+Not claimed as completed:
 
 - 20k / 50k synthetic data generation
-- Qwen 7B / 14B SFT results
 - verl / GRPO results
 - 4xRTX 5090 throughput numbers
-- downstream benchmark improvements
+- broad external benchmark improvements
 
 Those belong to the experiment roadmap and must be recorded under `docs/experiments/` after they actually run.
 
@@ -66,7 +91,7 @@ python -m pytest
 Expected local result at the time of writing:
 
 ```text
-57 passed
+68 passed
 ```
 
 ## Run Demo
@@ -144,6 +169,29 @@ python -m openseeker_factory.cli generate \
   --batch-size 100 \
   --resume
 ```
+
+### Canonical-v6 Blind Tool-choice Data
+
+Use `--data-version canonical-v6-blind-tool-choice-hard` for the current hardest deterministic split. It withholds the explicit lookup observation block, visible `P19` / `P17` relation IDs, `wikidata_lookup[entity, ...]` scaffolding, and `->` lookup-result hints from the user prompt.
+
+Instead, the prompt asks the model to choose relevant lookup intents from natural-language candidates with distractors:
+
+```text
+Tool choice challenge:
+- Write a concise ReAct trace with the lookup tool when needed.
+- Decide which lookup intents are relevant; some listed intents are distractors.
+- Do not use nationality, citizenship, residence, award, or workplace clues as the final country.
+- The final answer must be the country supported by the birthplace location chain.
+
+Candidate lookup intents:
+- birth location of the named person
+- current country or sovereign state containing a place
+- citizenship or nationality of the named person
+- main workplace, residence, or career country
+- field of work or award country
+```
+
+This split is useful when answer accuracy is already saturated and you need observation-level metrics to expose whether the model is faithfully reproducing the intermediate evidence.
 
 ## Optional Teacher Backend
 
@@ -268,7 +316,7 @@ Before any real remote run:
 4. Wait for user approval.
 5. Record completed experiments locally under `docs/experiments/`.
 
-First baseline command candidate:
+Example generation command:
 
 ```bash
 PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate \
@@ -281,6 +329,36 @@ PYTHONNOUSERSITE=1 python -m openseeker_factory.cli generate \
 
 This candidate still requires user approval before remote execution.
 
+## Experiment Records
+
+Every completed remote experiment is recorded under `docs/experiments/`. Key records for the current milestone:
+
+| Record | Purpose |
+| --- | --- |
+| `2026-06-13-canonical-v6-blind-tool-choice-hard-heldout.md` | v6 harder heldout design, generation, and leakage audit |
+| `2026-06-13-qwen3-8b-mixed-v6-blind-tool-choice-heldout200-eval.md` | previous 2k mixed adapter on v6 heldout |
+| `2026-06-13-qwen3-8b-mixed-v3-v4-v5blind-v6-data-smoke.md` | v6 train400 generation, 2.4k dataset build, smoke test |
+| `2026-06-13-qwen3-8b-mixed-v3-v4-v5blind-v6-sft-gpu0125.md` | 4-GPU Qwen3-8B LoRA SFT run |
+| `2026-06-13-qwen3-8b-mixed-v6trained-v6-heldout200-eval.md` | v6 heldout improvement after targeted SFT |
+| `2026-06-13-qwen3-8b-mixed-v6trained-v4-v5-regression-eval.md` | v4/v5 regression evaluation |
+
+## Limitations and Next Steps
+
+Current limitations:
+
+- The strongest verified loop still focuses on the birthplace-to-country path family.
+- The current scale is 2.4k SFT rows, not 20k/50k.
+- The reported improvement is on the project heldout suite, not on broad public agent benchmarks.
+- verl / GRPO and verifier-reward RL are not yet run.
+
+Recommended next technical step:
+
+```text
+canonical-v7 relation-diverse heldout
+```
+
+The v7 split should add relation paths beyond birthplace-to-country, such as education institution to country, award organization to country, employer headquarters to country, or publication venue to country. That would test whether the data factory generalizes beyond the current P19/P17 reasoning family.
+
 ## Resume Boundary
 
-Use the current project in a resume only as a verified system scaffold until remote experiments are run. Do not claim 20k/50k data scale, 4x5090 throughput, Qwen SFT improvements, or GRPO gains until there is a local experiment record with evidence.
+Resume wording may now claim the verified Qwen3-8B LoRA SFT loop and the v6 heldout improvement above. Do not claim 20k/50k data scale, GRPO gains, or broad benchmark improvements until there is a local experiment record with evidence.
