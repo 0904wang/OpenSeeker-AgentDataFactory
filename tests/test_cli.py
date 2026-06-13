@@ -265,6 +265,51 @@ def test_cli_generate_supports_canonical_v5_blind_hard_data_version(tmp_path: Pa
     assert "Available lookup observations:" not in sft["messages"][1]["content"]
 
 
+def test_cli_generate_supports_canonical_v6_blind_tool_choice_hard_data_version(
+    tmp_path: Path,
+):
+    out_dir = tmp_path / "canonical-v6-blind-tool-choice-hard"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "1",
+            "--seed-file",
+            "tests/fixtures/seeds.jsonl",
+            "--out-dir",
+            str(out_dir),
+            "--data-version",
+            "canonical-v6-blind-tool-choice-hard",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "accepted=1 rejected=0" in result.stdout
+    sample = json.loads(
+        (out_dir / "samples.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert sample["difficulty"] == "hard"
+    assert sample["source"]["data_version"] == "canonical-v6-blind-tool-choice-hard"
+    assert sample["source"]["heldout_profile"] == "v6-blind-tool-choice-hard"
+    assert sample["source"]["lookup_observation_block"] is False
+    assert "Available lookup observations:" not in sample["question"]
+    assert "P19" not in sample["question"]
+    assert "P17" not in sample["question"]
+    assert "Tool choice challenge:" in sample["question"]
+    assert "Candidate lookup intents:" in sample["question"]
+    sft = json.loads(
+        (out_dir / "sft_conversations.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert "Available lookup observations:" not in sft["messages"][1]["content"]
+    assert "P19" not in sft["messages"][1]["content"]
+    assert "P17" not in sft["messages"][1]["content"]
+
+
 def test_cli_generate_batches_export_artifacts_after_all_batches(tmp_path: Path):
     out_dir = tmp_path / "batched"
     result = subprocess.run(

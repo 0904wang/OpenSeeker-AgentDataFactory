@@ -24,6 +24,7 @@ DATA_VERSIONS = {
     "canonical-v4",
     "canonical-v4-hard",
     "canonical-v5-blind-hard",
+    "canonical-v6-blind-tool-choice-hard",
 }
 
 
@@ -472,6 +473,27 @@ class AgentDataFactory:
                 "noisy_context",
                 "strict_tool_schema",
             ]
+        elif self._data_version == "canonical-v6-blind-tool-choice-hard":
+            source["observation_grounding"] = "gold_tool_results"
+            source["observation_conditioning"] = "blind_tool_selection"
+            source["lookup_observation_block"] = False
+            source["distractor_lookup_observation"] = False
+            source["heldout_profile"] = "v6-blind-tool-choice-hard"
+            source["conflict_types"] = self._conflict_types_for_task(task) + [
+                "tool_intent_distractor",
+                "withheld_property_ids",
+            ]
+            source["observation_grounding_policy"] = (
+                "model_must_select_lookup_intents_without_property_id_hints"
+            )
+            source["difficulty_factors"] = [
+                "blind_observation_generation",
+                "blind_tool_selection",
+                "withheld_property_ids",
+                "alias_trap",
+                "intent_distractor",
+                "noisy_context",
+            ]
         elif self._uses_lookup_conditioning():
             source["observation_grounding"] = "provided_lookup_results"
             source["observation_conditioning"] = "lookup_result_block"
@@ -518,6 +540,8 @@ class AgentDataFactory:
         question = task.question
         if self._data_version == "canonical-v5-blind-hard":
             question = self._with_blind_hard_prompt(question, task)
+        elif self._data_version == "canonical-v6-blind-tool-choice-hard":
+            question = self._with_blind_tool_choice_hard_prompt(question, task)
         elif self._data_version == "canonical-v4-hard":
             question = self._with_hard_lookup_observation_block(question, task)
         elif self._data_version == "canonical-v4":
@@ -530,6 +554,8 @@ class AgentDataFactory:
             question = self._default_question_for_task(task)
             if self._data_version == "canonical-v5-blind-hard":
                 question = self._with_blind_hard_prompt(question, task)
+            elif self._data_version == "canonical-v6-blind-tool-choice-hard":
+                question = self._with_blind_tool_choice_hard_prompt(question, task)
             elif self._data_version == "canonical-v4-hard":
                 question = self._with_hard_lookup_observation_block(question, task)
             elif self._data_version == "canonical-v4":
@@ -549,6 +575,7 @@ class AgentDataFactory:
                 if self._data_version in {
                     "canonical-v4-hard",
                     "canonical-v5-blind-hard",
+                    "canonical-v6-blind-tool-choice-hard",
                 }
                 else task.difficulty
             ),
@@ -659,6 +686,40 @@ class AgentDataFactory:
                     *[f"- {item}" for item in evidence_hints],
                 ]
             )
+        return "\n".join(prompt_lines)
+
+    def _with_blind_tool_choice_hard_prompt(
+        self, question: str, task: EvolvedTask
+    ) -> str:
+        entity = self._entity_from_tool_plan(task)
+        alias_traps = self._alias_traps_for_answer(task.answer)
+        distractor = self._distractor_result_for_task(task)
+        noisy_context = task.noisy_context or [
+            f"{entity} has unrelated biographical details that are not birthplace evidence."
+        ]
+        candidate_intents = [
+            "birth location of the named person",
+            "current country or sovereign state containing a place",
+            "citizenship or nationality of the named person",
+            "main workplace, residence, or career country",
+            "field of work or award country",
+        ]
+        prompt_lines = [
+            question,
+            "",
+            "Tool choice challenge:",
+            "- Write a concise ReAct trace with the lookup tool when needed.",
+            "- Decide which lookup intents are relevant; some listed intents are distractors.",
+            "- Do not use nationality, citizenship, residence, award, or workplace clues as the final country.",
+            "- The final answer must be the country supported by the birthplace location chain.",
+            "",
+            "Candidate lookup intents:",
+            *[f"- {intent}" for intent in candidate_intents],
+            "",
+            f"Alias trap: {', '.join(alias_traps)} and {distractor} may look relevant but are not sufficient.",
+            "Noisy context:",
+            *[f"- {item}" for item in noisy_context],
+        ]
         return "\n".join(prompt_lines)
 
     def _conflict_types_for_task(self, task: EvolvedTask) -> list[str]:
