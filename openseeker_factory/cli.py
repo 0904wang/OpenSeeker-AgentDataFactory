@@ -13,6 +13,7 @@ from openseeker_factory.evaluation import (
 )
 from openseeker_factory.pipeline import AgentDataFactory
 from openseeker_factory.rft import run_rft_filter, run_sample_rft_candidates
+from openseeker_factory.rewards import run_score_verifier_rewards
 from openseeker_factory.schema import AgentDataSample
 from openseeker_factory.seed_bank import build_wikidata_seed_rows, write_seed_jsonl
 
@@ -364,6 +365,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional cap on accepted trajectories per original prompt.",
     )
+    reward_score = subparsers.add_parser(
+        "score-verifier-rewards",
+        help="Score rollout predictions with binary or weighted verifier rewards.",
+    )
+    reward_score.add_argument(
+        "--samples",
+        type=Path,
+        required=True,
+        help="Input samples.jsonl file using the OpenSeeker sample schema.",
+    )
+    reward_score.add_argument(
+        "--prediction-file",
+        type=Path,
+        required=True,
+        help="Prediction JSONL with id and prediction/response/text fields.",
+    )
+    reward_score.add_argument(
+        "--out-dir",
+        type=Path,
+        required=True,
+        help="Directory for verifier reward JSONL and summary artifacts.",
+    )
+    reward_score.add_argument(
+        "--model-label",
+        required=True,
+        help="Short label stored in reward rows.",
+    )
+    reward_score.add_argument(
+        "--reward-mode",
+        choices=["binary", "weighted"],
+        default="weighted",
+        help="Primary reward column to emit for RL training.",
+    )
     return parser
 
 
@@ -699,6 +733,22 @@ def main(argv: list[str] | None = None) -> int:
             f"rejected={summary['rejected_total']} "
             f"pass_rate={summary['verifier_pass_rate']} "
             f"out_dir={args.out_dir}"
+        )
+        return 0
+    if args.command == "score-verifier-rewards":
+        rewards_path, summary = run_score_verifier_rewards(
+            samples_path=args.samples,
+            prediction_file=args.prediction_file,
+            out_dir=args.out_dir,
+            model_label=args.model_label,
+            reward_mode=args.reward_mode,
+        )
+        print(
+            f"OpenSeeker verifier reward scoring complete: "
+            f"rows={summary['total']} "
+            f"reward_avg={summary['reward_avg']} "
+            f"binary_pass_rate={summary['binary_pass_rate']} "
+            f"rewards={rewards_path}"
         )
         return 0
     raise ValueError(f"Unknown command: {args.command}")
