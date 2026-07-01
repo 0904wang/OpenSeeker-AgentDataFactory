@@ -11,6 +11,7 @@ OpenSeeker AgentDataFactory is now a verified synthetic-data, SFT, and RFT loop 
 - The strongest SFT baseline uses Qwen3-8B + LoRA on 2.4k mixed synthetic rows and reaches v6 observation faithfulness `0.985`.
 - RFT / ReST-EM Round 1 samples 9.6k trajectories from the SFT checkpoint, verifier-filters 9,429 all-pass candidates, retains 1,095 changed trajectories, and continues SFT on a 3.5k mixed dataset.
 - Main measured result: v6 blind tool-choice heldout failures drop from `3/200` to `0/200` after RFT Round 1, while v4/v5 heldouts remain at all core metrics `1.0`.
+- A harder v7 relation-diverse heldout is now implemented and evaluated; it exposes remaining generalization gaps beyond the birthplace-to-country path, with current strict correct rate `0.605`.
 
 ## Resume Bullets: Chinese
 
@@ -139,9 +140,10 @@ Do not claim:
 - broad public benchmark improvements
 - Qwen 14B or 32B training results
 - production-grade general tool-use ability
+- solved relation-diverse tool-use generalization
 
 Accurate limitation:
 
 ```text
-The verified loop is currently strongest on a controlled Wikidata birthplace-to-country reasoning family. The next planned step is a relation-diverse v7 split with more tool-choice paths.
+The verified RFT loop solves the controlled birthplace-to-country heldouts, but the v7 relation-diverse heldout shows remaining gaps on education, employer, and award relation paths. The next step is targeted v7 data plus SFT/RFT and v4/v5/v6 regression checks.
 ```

@@ -200,7 +200,7 @@ Status update:
 
 Goal: reduce overfitting to the current birthplace-to-country path family.
 
-Local implementation status: completed and smoke-tested. Remote heldout generation and model evaluation are still pending.
+Status: completed through remote heldout generation and current-checkpoint evaluation. Follow-up training remains pending.
 
 Implemented relation paths:
 
@@ -219,6 +219,21 @@ question leakage audit -> 0 property IDs, 0 wikidata_lookup templates
 summary metrics -> solvability/evidence/tool/trajectory all 1.0
 ```
 
+Remote evaluation evidence:
+
+```text
+current checkpoint: Qwen3-8B RFT-changed Round 1
+v7 heldout200: 50 birthplace, 50 education, 50 employer, 50 award
+overall strict correct_rate: 0.605
+overall exact_match_rate: 0.86
+tool_call_success_rate: 0.72
+observation_faithfulness_rate: 0.50
+birthplace_country correct: 50/50
+education_country correct: 27/50
+employer_country correct: 29/50
+award_country correct: 15/50
+```
+
 Acceptance:
 
 - local v7 user prompts hide explicit relation IDs and tool schemas, similar to v6
@@ -228,7 +243,7 @@ Acceptance:
 - evaluation reports answer, tool-call, trajectory, observation-faithfulness, and hallucination metrics
 - targeted SFT or RFT improves v7 observation faithfulness without regressing v4/v5/v6
 
-Recommended next run:
+Completed remote generation command:
 
 ```bash
 python -m openseeker_factory.cli build-seeds \
@@ -242,4 +257,10 @@ python -m openseeker_factory.cli generate \
   --data-version canonical-v7-relation-diverse
 ```
 
-This still requires the normal remote preflight, smoke test, launch report, and user approval.
+This run followed the normal remote preflight, smoke test, launch report, and user approval workflow.
+
+Recommended next run:
+
+```text
+Generate 800-1,200 targeted v7 training rows balanced across education/employer/award, then run focused SFT or RFT and evaluate v7 plus v4/v5/v6 regression.
+```

@@ -230,7 +230,9 @@ python -m openseeker_factory.cli generate \
   --data-version canonical-v7-relation-diverse
 ```
 
-Local smoke status: 8 generated, 8 accepted, no property IDs or `wikidata_lookup[...]` templates leaked into questions. Remote heldout generation and model evaluation still need a separate approved launch.
+Local smoke status: 8 generated, 8 accepted, no property IDs or `wikidata_lookup[...]` templates leaked into questions. Remote heldout200 generation and evaluation are recorded under `docs/experiments/`.
+
+Remote v7 evaluation status: completed for the current Qwen3-8B RFT-changed Round 1 adapter. Overall strict `correct_rate` is `0.605`, while exact final-answer match is `0.86`; this gap shows that many responses name the right country but fail the required relation/tool path. Birthplace remains saturated (`50/50` correct), but education, employer, and award relation profiles expose tool-selection and observation-faithfulness failures.
 
 ## Optional Teacher Backend
 
@@ -384,6 +386,7 @@ Every completed remote experiment is recorded under `docs/experiments/`. Key rec
 | `2026-07-01-sft-rft-round1-changed-3p5k-gpu06.md` | continued SFT on 1,095 changed RFT trajectories mixed with the 2.4k base |
 | `2026-07-01-rftchanged-round1-v6-v4-v5-eval.md` | RFT changed-only round1 evaluation on v6 plus v4/v5 regression heldouts |
 | `2026-07-01-canonical-v7-relation-diverse-local.md` | local v7 relation-diverse implementation and smoke audit |
+| `2026-07-01-qwen3-8b-rftchanged-v7-relation-diverse-eval.md` | current RFT checkpoint on v7 relation-diverse heldout200 |
 
 ## Limitations and Next Steps
 
@@ -393,15 +396,15 @@ Current limitations:
 - The current best scale is 3.5k SFT rows after RFT, not 20k/50k.
 - The reported improvement is on the project heldout suite, not on broad public agent benchmarks.
 - RFT / ReST-EM continued SFT is verified; verl / GRPO verifier-reward RL is not yet run.
-- `canonical-v7-relation-diverse` is implemented and locally smoke-tested, but remote heldout evaluation is not yet run.
+- `canonical-v7-relation-diverse` is implemented and evaluated; current RFT checkpoint reaches `0.605` strict correct rate on v7.
 
 Recommended next technical step:
 
 ```text
-remote canonical-v7 relation-diverse heldout200 generation and evaluation
+targeted v7 relation-diverse training data and regression SFT/RFT
 ```
 
-The v7 split now adds relation paths beyond birthplace-to-country, including education institution to country, employer to country, and award to country. The next evidence-producing step is to generate a remote v7 heldout200 and evaluate the current RFT checkpoint against it.
+The v7 split now adds relation paths beyond birthplace-to-country, including education institution to country, employer to country, and award to country. The next evidence-producing step is to generate targeted v7 training data, run a focused SFT/RFT pass, and verify v7 gains without regressing v4/v5/v6.
 
 ## Resume Boundary
 
