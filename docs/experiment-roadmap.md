@@ -2,14 +2,14 @@
 
 This roadmap converts OpenSeeker AgentDataFactory from a verified local scaffold into a resume-grade remote experiment project. Each completed experiment must have a local record under `docs/experiments/`.
 
-## Current Milestone - v6 Closed Loop
+## Current Milestone - v6 Closed Loop + RFT Round 1
 
 Status: completed and recorded.
 
 The project now has a verified closed loop:
 
 ```text
-harder heldout design -> failure audit -> targeted synthetic data -> Qwen3-8B LoRA SFT -> regression evaluation
+harder heldout design -> failure audit -> targeted synthetic data -> Qwen3-8B LoRA SFT -> RFT/ReST-EM rejection sampling -> regression evaluation
 ```
 
 Current best result:
@@ -17,6 +17,7 @@ Current best result:
 ```text
 2k mixed v3/v4/v5blind -> v6 observation_faithfulness 0.945
 2.4k mixed v3/v4/v5blind/v6 -> v6 observation_faithfulness 0.985
+3.5k SFT + RFT changed round1 -> v6 observation_faithfulness 1.000
 v4 and v5 heldout core metrics stayed at 1.0
 ```
 
@@ -25,7 +26,12 @@ Key records:
 ```text
 docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v6-heldout200-eval.md
 docs/experiments/2026-06-13-qwen3-8b-mixed-v6trained-v4-v5-regression-eval.md
+docs/experiments/2026-07-01-rft-round1-a0-k4-t1p0.md
+docs/experiments/2026-07-01-sft-rft-round1-changed-3p5k-gpu06.md
+docs/experiments/2026-07-01-rftchanged-round1-v6-v4-v5-eval.md
 ```
+
+RFT Stage A is complete for the current v4/v5/v6 heldout suite: the target v6 failures dropped from `3/200` to `0/200`, and v4/v5 stayed saturated. Do not spend more compute on RFT Round 2 against the same heldouts unless a harder split is added first.
 
 Do not treat this as completion of 20k/50k scale or RL validation. The next high-value experiment is relation-diverse v7, not simply more same-template data.
 
@@ -157,7 +163,7 @@ Acceptance:
 - one table compares accepted rate, quality metrics, and failure modes
 - resume claims distinguish scale, filtering, and downstream effect
 
-## Phase 5 - SFT / RL Validation
+## Phase 5 - SFT / RFT / RL Validation
 
 Goal: turn data quality into model behavior evidence.
 
@@ -165,6 +171,7 @@ Default model tier:
 
 - Qwen 7B or 14B
 - LoRA SFT first
+- RFT / ReST-EM continued SFT after a strong SFT checkpoint
 - verl / GRPO only after SFT and verifier reward are stable
 
 Evaluation:
@@ -185,7 +192,9 @@ Status update:
 
 - Qwen3-8B LoRA SFT on 2k and 2.4k mixed synthetic data is completed.
 - v4/v5/v6 heldout evaluations are completed.
-- 20k/50k data scale and RL validation remain future work.
+- RFT Round 1 from the restored 2.4k A0 checkpoint is completed: sampled 9.6k candidates, accepted 9,429 all-pass candidates, retained 1,095 changed trajectories, and continued SFT to a 3.5k mixed dataset.
+- RFT changed-only round1 reduced v6 blind tool-choice failures from `3/200` to `0/200` without v4/v5 regression.
+- 20k/50k data scale and GRPO/RLVR validation remain future work.
 
 ## Phase 6 - v7 Relation-diverse Heldout
 

@@ -27,30 +27,36 @@ Verified:
 - pytest coverage for schema, pipeline, exports, and CLI
 - remote safety workflow with preflight, narrow sync, tmux launch, logs, checkpoints, and local experiment records
 - Qwen3-8B LoRA SFT on mixed OpenSeeker synthetic data
+- verifier-filtered RFT / ReST-EM continued SFT from a restored SFT checkpoint
 - heldout evaluation with answer, tool-call, trajectory, hallucination, and observation-faithfulness metrics
 
 Current best recorded experiment:
 
 ```text
 Model: Qwen3-8B + LoRA
-Data: 2.4k mixed OpenSeeker SFT rows
-Mix: 800 canonical-v3 + 800 canonical-v4 + 400 canonical-v5-blind-hard + 400 canonical-v6-blind-tool-choice-hard
-Training: 4 GPUs, 1 epoch, 72 optimization steps
-Checkpoint: /data/wzl/OpenSeeker-AgentDataFactory/checkpoints/qwen3-8b-openseeker-sft-2p4k-mixed-v3-v4-v5blind-v6blindtoolchoice
+Base data: 2.4k mixed OpenSeeker SFT rows
+RFT data: 1,095 verifier-passing changed trajectories retained from 9.6k sampled candidates
+Final data: 3.5k SFT rows = 2.4k base + 1,095 changed RFT rows
+RFT pass rate: 9,429 / 9,600 = 0.9822
+Continued SFT: 2 GPUs, 1 epoch
+Checkpoint: /data/wzl/OpenSeeker-AgentDataFactory/checkpoints/qwen3-8b-openseeker-sft-3p5k-mixed-v3-v4-v5blind-v6-rftchanged-round1-20260701
 ```
 
 Heldout results:
 
-| Adapter | Heldout | Exact | Tool success | Observation faithfulness | Trajectory valid | Hallucination |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 2k mixed v3/v4/v5blind | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
-| 2k mixed v3/v4/v5blind | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
-| 2k mixed v3/v4/v5blind | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.945 | 1.000 | 0.000 |
-| 2.4k mixed v3/v4/v5blind/v6 | v4 heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
-| 2.4k mixed v3/v4/v5blind/v6 | v5 blind-hard heldout200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
-| 2.4k mixed v3/v4/v5blind/v6 | v6 blind tool-choice heldout200 | 1.000 | 1.000 | 0.985 | 1.000 | 0.000 |
+| Adapter | Heldout | Failures | Exact | Tool success | Observation faithfulness | Trajectory valid | Hallucination |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2k mixed v3/v4/v5blind | v4 heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v5 blind-hard heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2k mixed v3/v4/v5blind | v6 blind tool-choice heldout200 | 11/200 | 1.000 | 1.000 | 0.945 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 A0 | v4 heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 A0 | v5 blind-hard heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 2.4k mixed v3/v4/v5blind/v6 A0 | v6 blind tool-choice heldout200 | 3/200 | 1.000 | 1.000 | 0.985 | 1.000 | 0.000 |
+| 3.5k SFT + RFT changed round1 | v4 heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 3.5k SFT + RFT changed round1 | v5 blind-hard heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
+| 3.5k SFT + RFT changed round1 | v6 blind tool-choice heldout200 | 0/200 | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 |
 
-The v6 loop is the main project milestone: a harder heldout exposed observation-level evidence drift, targeted v6 synthetic data reduced failures from 11/200 to 3/200, and v4/v5 regression evaluations stayed saturated.
+The v6 loop is the main project milestone: a harder heldout exposed observation-level evidence drift, targeted v6 synthetic data reduced failures from 11/200 to 3/200, and verifier-filtered RFT Round 1 removed the remaining 3/200 failures without regressing v4/v5.
 
 Not claimed as completed:
 
@@ -341,15 +347,18 @@ Every completed remote experiment is recorded under `docs/experiments/`. Key rec
 | `2026-06-13-qwen3-8b-mixed-v3-v4-v5blind-v6-sft-gpu0125.md` | 4-GPU Qwen3-8B LoRA SFT run |
 | `2026-06-13-qwen3-8b-mixed-v6trained-v6-heldout200-eval.md` | v6 heldout improvement after targeted SFT |
 | `2026-06-13-qwen3-8b-mixed-v6trained-v4-v5-regression-eval.md` | v4/v5 regression evaluation |
+| `2026-07-01-rft-round1-a0-k4-t1p0.md` | RFT Round 1 sampling audit from the restored A0 SFT checkpoint |
+| `2026-07-01-sft-rft-round1-changed-3p5k-gpu06.md` | continued SFT on 1,095 changed RFT trajectories mixed with the 2.4k base |
+| `2026-07-01-rftchanged-round1-v6-v4-v5-eval.md` | RFT changed-only round1 evaluation on v6 plus v4/v5 regression heldouts |
 
 ## Limitations and Next Steps
 
 Current limitations:
 
 - The strongest verified loop still focuses on the birthplace-to-country path family.
-- The current scale is 2.4k SFT rows, not 20k/50k.
+- The current best scale is 3.5k SFT rows after RFT, not 20k/50k.
 - The reported improvement is on the project heldout suite, not on broad public agent benchmarks.
-- verl / GRPO and verifier-reward RL are not yet run.
+- RFT / ReST-EM continued SFT is verified; verl / GRPO verifier-reward RL is not yet run.
 
 Recommended next technical step:
 
@@ -361,4 +370,4 @@ The v7 split should add relation paths beyond birthplace-to-country, such as edu
 
 ## Resume Boundary
 
-Resume wording may now claim the verified Qwen3-8B LoRA SFT loop and the v6 heldout improvement above. Do not claim 20k/50k data scale, GRPO gains, or broad benchmark improvements until there is a local experiment record with evidence.
+Resume wording may now claim the verified Qwen3-8B LoRA SFT loop, the RFT / ReST-EM rejection-sampling pass, and the v6 heldout improvement above. Do not claim 20k/50k data scale, GRPO gains, or broad benchmark improvements until there is a local experiment record with evidence.
