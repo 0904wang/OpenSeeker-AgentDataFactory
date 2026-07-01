@@ -12,6 +12,7 @@ from openseeker_factory.evaluation import (
     write_evaluation_outputs,
 )
 from openseeker_factory.pipeline import AgentDataFactory
+from openseeker_factory.rft import run_rft_filter, run_sample_rft_candidates
 from openseeker_factory.schema import AgentDataSample
 from openseeker_factory.seed_bank import build_wikidata_seed_rows, write_seed_jsonl
 
@@ -222,6 +223,139 @@ def build_parser() -> argparse.ArgumentParser:
         "--disable-thinking",
         action="store_true",
         help="Ask compatible chat templates such as Qwen3 to disable thinking mode.",
+    )
+    rft_sample = subparsers.add_parser(
+        "sample-rft-candidates",
+        help="Sample multiple model trajectories per prompt for RFT/ReST-EM.",
+    )
+    rft_sample.add_argument(
+        "--samples",
+        type=Path,
+        required=True,
+        help="Input samples.jsonl file using the OpenSeeker sample schema.",
+    )
+    rft_sample.add_argument(
+        "--out-dir",
+        type=Path,
+        required=True,
+        help="Directory for candidate prediction JSONL artifacts.",
+    )
+    rft_sample.add_argument(
+        "--model-label",
+        required=True,
+        help="Short label stored in candidate rows.",
+    )
+    rft_sample.add_argument(
+        "--model-name-or-path",
+        required=True,
+        help="Base Hugging Face model name or local path.",
+    )
+    rft_sample.add_argument(
+        "--adapter-path",
+        default=None,
+        help="Optional PEFT/LoRA adapter path to load on top of the base model.",
+    )
+    rft_sample.add_argument(
+        "--num-return-sequences",
+        type=int,
+        default=4,
+        help="Number of sampled trajectories per prompt.",
+    )
+    rft_sample.add_argument(
+        "--temperature",
+        type=float,
+        default=0.7,
+        help="Sampling temperature. Must be greater than zero.",
+    )
+    rft_sample.add_argument(
+        "--top-p",
+        type=float,
+        default=0.95,
+        help="Nucleus sampling probability.",
+    )
+    rft_sample.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum number of samples to use.",
+    )
+    rft_sample.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Number of samples to skip before applying --limit.",
+    )
+    rft_sample.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Prompt batch size before multiplying by --num-return-sequences.",
+    )
+    rft_sample.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=160,
+        help="Maximum new tokens to generate per candidate.",
+    )
+    rft_sample.add_argument(
+        "--device",
+        default=None,
+        help="Torch device such as cuda or cpu. Defaults to cuda when available.",
+    )
+    rft_sample.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Force Transformers/PEFT to use local files only.",
+    )
+    rft_sample.add_argument(
+        "--disable-thinking",
+        action="store_true",
+        help="Ask compatible chat templates such as Qwen3 to disable thinking mode.",
+    )
+    rft_sample.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional torch RNG seed for reproducible sampling.",
+    )
+    rft_filter = subparsers.add_parser(
+        "rft-filter",
+        help="Verifier-filter sampled RFT candidates and export accepted SFT data.",
+    )
+    rft_filter.add_argument(
+        "--samples",
+        type=Path,
+        required=True,
+        help="Input samples.jsonl file using the OpenSeeker sample schema.",
+    )
+    rft_filter.add_argument(
+        "--prediction-file",
+        type=Path,
+        required=True,
+        help="Candidate prediction JSONL with duplicate ids allowed.",
+    )
+    rft_filter.add_argument(
+        "--out-dir",
+        type=Path,
+        required=True,
+        help="Directory for scored candidates and accepted RFT data.",
+    )
+    rft_filter.add_argument(
+        "--model-label",
+        required=True,
+        help="Short label used in scored candidate rows.",
+    )
+    rft_filter.add_argument(
+        "--iteration",
+        type=int,
+        required=True,
+        help="RFT iteration number, starting at 1.",
+    )
+    rft_filter.add_argument(
+        "--max-per-prompt",
+        type=int,
+        default=None,
+        help="Optional cap on accepted trajectories per original prompt.",
     )
     return parser
 
@@ -509,6 +643,48 @@ def main(argv: list[str] | None = None) -> int:
             local_files_only=args.local_files_only,
             disable_thinking=args.disable_thinking,
         )
+    if args.command == "sample-rft-candidates":
+        predictions_path, total_rows = run_sample_rft_candidates(
+            samples_path=args.samples,
+            out_dir=args.out_dir,
+            model_label=args.model_label,
+            model_name_or_path=args.model_name_or_path,
+            adapter_path=args.adapter_path,
+            num_return_sequences=args.num_return_sequences,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            limit=args.limit,
+            offset=args.offset,
+            batch_size=args.batch_size,
+            max_new_tokens=args.max_new_tokens,
+            device=args.device,
+            local_files_only=args.local_files_only,
+            disable_thinking=args.disable_thinking,
+            seed=args.seed,
+        )
+        print(
+            f"OpenSeeker RFT sampling complete: "
+            f"candidates={total_rows} predictions={predictions_path}"
+        )
+        return 0
+    if args.command == "rft-filter":
+        summary = run_rft_filter(
+            samples_path=args.samples,
+            prediction_file=args.prediction_file,
+            out_dir=args.out_dir,
+            model_label=args.model_label,
+            iteration=args.iteration,
+            max_per_prompt=args.max_per_prompt,
+        )
+        print(
+            f"OpenSeeker RFT filter complete: "
+            f"sampled={summary['sampled_total']} "
+            f"accepted={summary['accepted_total']} "
+            f"rejected={summary['rejected_total']} "
+            f"pass_rate={summary['verifier_pass_rate']} "
+            f"out_dir={args.out_dir}"
+        )
+        return 0
     raise ValueError(f"Unknown command: {args.command}")
 
 
