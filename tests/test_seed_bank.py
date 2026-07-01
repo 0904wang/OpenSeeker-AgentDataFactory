@@ -37,6 +37,25 @@ def test_build_wikidata_seed_rows_supports_heldout_offset():
     }
 
 
+def test_build_wikidata_seed_rows_supports_relation_diverse_rows():
+    rows = build_wikidata_seed_rows(relation_diverse=True, limit=16)
+
+    assert len(rows) == 16
+    assert len({row["id"] for row in rows}) == len(rows)
+    assert {
+        "birthplace_country",
+        "education_country",
+        "employer_country",
+        "award_country",
+    } <= {row["relation"] for row in rows}
+    for row in rows:
+        assert row["entity"]
+        assert row["intermediate"]
+        assert row["answer"]
+        assert len(row["evidence"]) >= 2
+        assert len(row["noisy_context"]) >= 2
+
+
 def test_write_seed_jsonl_round_trips_rows(tmp_path: Path):
     rows = build_wikidata_seed_rows()[:5]
     path = tmp_path / "seeds.jsonl"

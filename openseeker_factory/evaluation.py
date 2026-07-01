@@ -520,8 +520,9 @@ def _format_prompt(
             "role": "system",
             "content": (
                 "You are a ReAct agent that must cite tool observations. "
-                "Use at most two wikidata_lookup actions: first find the birthplace, "
-                "then find that birthplace's country. Stop once the country is known. "
+                "Use at most two wikidata_lookup actions: first identify the "
+                "intermediate entity for the requested relation, then resolve that "
+                "intermediate entity to the requested country. Stop once the country is known. "
                 "The final line must be exactly `Final: <country>`."
             ),
         },

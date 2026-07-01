@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
             "canonical-v4-hard",
             "canonical-v5-blind-hard",
             "canonical-v6-blind-tool-choice-hard",
+            "canonical-v7-relation-diverse",
         ],
         default="canonical-v3",
         help="Synthetic data contract to use.",
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
             "canonical-v4-hard",
             "canonical-v5-blind-hard",
             "canonical-v6-blind-tool-choice-hard",
+            "canonical-v7-relation-diverse",
         ],
         default="canonical-v3",
         help="Synthetic data contract to use.",
@@ -147,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Number of seed rows to skip before applying --limit.",
+    )
+    build_seeds.add_argument(
+        "--relation-diverse",
+        action="store_true",
+        help="Build relation-diverse v7 seed rows instead of the birthplace-only seed bank.",
     )
     evaluate = subparsers.add_parser(
         "evaluate-model",
@@ -395,8 +402,12 @@ def run_demo(count: int, out_dir: Path, data_version: str) -> int:
     return 0
 
 
-def run_build_seeds(out_file: Path, limit: int | None, offset: int) -> int:
-    rows = build_wikidata_seed_rows(limit=limit, offset=offset)
+def run_build_seeds(
+    out_file: Path, limit: int | None, offset: int, relation_diverse: bool = False
+) -> int:
+    rows = build_wikidata_seed_rows(
+        limit=limit, offset=offset, relation_diverse=relation_diverse
+    )
     write_seed_jsonl(rows, out_file)
     print(
         f"OpenSeeker seed build complete: rows={len(rows)} out_file={out_file}"
@@ -606,7 +617,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "demo":
         return run_demo(args.count, args.out_dir, args.data_version)
     if args.command == "build-seeds":
-        return run_build_seeds(args.out_file, args.limit, args.offset)
+        return run_build_seeds(
+            args.out_file,
+            args.limit,
+            args.offset,
+            relation_diverse=args.relation_diverse,
+        )
     if args.command == "generate":
         teacher_backend = build_chat_backend(
             backend=args.teacher_backend,

@@ -25,6 +25,7 @@ DATA_VERSIONS = {
     "canonical-v4-hard",
     "canonical-v5-blind-hard",
     "canonical-v6-blind-tool-choice-hard",
+    "canonical-v7-relation-diverse",
 }
 
 
@@ -39,6 +40,99 @@ class SeedTask:
     evidence: list[str]
     noisy_context: list[str]
     variant_index: int = 0
+
+
+@dataclass(frozen=True)
+class RelationProfile:
+    name: str
+    relation_aliases: tuple[str, ...]
+    first_property: str
+    second_property: str
+    first_intent: str
+    second_intent: str
+    target_description: str
+    first_thought: str
+    second_thought: str
+    distractor_intents: tuple[str, ...]
+
+
+RELATION_PROFILES: tuple[RelationProfile, ...] = (
+    RelationProfile(
+        name="birthplace_country",
+        relation_aliases=(
+            "birthplace_country",
+            "birthplace_current_country",
+            "birthplace_country_noisy",
+            "birthplace_capital_country",
+        ),
+        first_property="P19",
+        second_property="P17",
+        first_intent="birth location of the named person",
+        second_intent="current country or sovereign state containing a place",
+        target_description="country of the birthplace",
+        first_thought="Identify the entity's birthplace.",
+        second_thought="Resolve the country from the intermediate location.",
+        distractor_intents=(
+            "citizenship or nationality of the named person",
+            "main workplace, residence, or career country",
+            "field of work or award country",
+        ),
+    ),
+    RelationProfile(
+        name="education_country",
+        relation_aliases=("education_country", "educated_at_country"),
+        first_property="P69",
+        second_property="P17",
+        first_intent="education institution attended by the named person",
+        second_intent="country containing an education institution",
+        target_description="country of the education institution",
+        first_thought="Identify the education institution linked to the entity.",
+        second_thought="Resolve the country for that institution.",
+        distractor_intents=(
+            "birth location of the named person",
+            "citizenship or nationality of the named person",
+            "employer or workplace of the named person",
+        ),
+    ),
+    RelationProfile(
+        name="employer_country",
+        relation_aliases=("employer_country", "workplace_country"),
+        first_property="P108",
+        second_property="P17",
+        first_intent="employer or workplace of the named person",
+        second_intent="country containing the employer or organization",
+        target_description="country of the employer or workplace organization",
+        first_thought="Identify the employer or workplace linked to the entity.",
+        second_thought="Resolve the country for that organization.",
+        distractor_intents=(
+            "birth location of the named person",
+            "education institution attended by the named person",
+            "award received by the named person",
+        ),
+    ),
+    RelationProfile(
+        name="award_country",
+        relation_aliases=("award_country", "award_origin_country"),
+        first_property="P166",
+        second_property="P17",
+        first_intent="award received by the named person",
+        second_intent="country associated with the award",
+        target_description="country associated with the award",
+        first_thought="Identify the award linked to the entity.",
+        second_thought="Resolve the country associated with that award.",
+        distractor_intents=(
+            "birth location of the named person",
+            "education institution attended by the named person",
+            "employer or workplace of the named person",
+        ),
+    ),
+)
+
+RELATION_PROFILE_BY_ALIAS = {
+    alias: profile
+    for profile in RELATION_PROFILES
+    for alias in profile.relation_aliases
+}
 
 
 @dataclass(eq=True)
@@ -325,19 +419,8 @@ class AgentDataFactory:
             raise ValueError("strategy must be evol_instruct or magpie_self_instruct")
 
         question = self._build_question(seed)
-
-        tool_plan = [
-            ToolCall(
-                tool="wikidata_lookup",
-                query=f"{seed.entity}, P19",
-                result=seed.intermediate,
-            ),
-            ToolCall(
-                tool="wikidata_lookup",
-                query=f"{seed.intermediate}, P17",
-                result=seed.answer,
-            ),
-        ]
+        profile = self._relation_profile_for_relation(seed.relation)
+        tool_plan = self._tool_plan_for_seed(seed, profile)
         task = EvolvedTask(
             id=seed.id.replace("demo-", "task-"),
             task_type=seed.task_type,
@@ -350,6 +433,8 @@ class AgentDataFactory:
             source={
                 "seed_id": seed.id,
                 "seed_source": self._seed_source_label,
+                "relation": seed.relation,
+                "relation_profile": profile.name,
                 "variant_index": seed.variant_index,
                 "strategy": strategy,
                 "references": [
@@ -386,6 +471,10 @@ class AgentDataFactory:
                                     "task_type": seed.task_type,
                                     "entity": seed.entity,
                                     "relation": seed.relation,
+                                    "first_lookup_intent": profile.first_intent,
+                                    "second_lookup_intent": profile.second_intent,
+                                    "first_property": profile.first_property,
+                                    "second_property": profile.second_property,
                                     "intermediate": seed.intermediate,
                                     "answer": seed.answer,
                                     "evidence": seed.evidence,
@@ -413,6 +502,9 @@ class AgentDataFactory:
 
     def _build_question(self, seed: SeedTask) -> str:
         variant = seed.variant_index or 1
+        profile = self._relation_profile_for_relation(seed.relation)
+        if profile.name != "birthplace_country":
+            return self._build_profile_question(seed, profile, variant)
         if seed.task_type == "tool_use_qa":
             templates = [
                 "Use the available lookup tool to identify the present-day country associated with {entity}'s birthplace.",
@@ -454,9 +546,77 @@ class AgentDataFactory:
             question = f"{question} {constraint}"
         return question
 
+    def _build_profile_question(
+        self, seed: SeedTask, profile: RelationProfile, variant: int
+    ) -> str:
+        if seed.task_type == "tool_use_qa":
+            templates = [
+                "Use the available lookup tool to identify the {target} for {entity}.",
+                "Call the lookup tool step by step: which country is supported by {entity}'s {first_intent}?",
+                "Resolve the relevant relation with tools, then return the {target}.",
+                "Find {entity}'s {first_intent} via lookup and map it to its country.",
+            ]
+        elif seed.task_type == "noisy_context_retrieval_qa":
+            templates = [
+                "Ignore distracting context and answer: what is the {target} for {entity}?",
+                "Filter the noisy evidence and identify the country tied to {entity}'s relevant relation.",
+                "Using only relevant evidence, determine the {target} for {entity}.",
+                "Discard unrelated clues and answer with the country supported by the relation path for {entity}.",
+            ]
+        else:
+            templates = [
+                "Answer by chaining facts: what is the {target} for {entity}?",
+                "Use multi-hop reasoning to find the country connected to {entity}'s relevant relation.",
+                "First identify the {first_intent}, then infer the country from that intermediate entity.",
+                "Follow the evidence chain from {entity} to the intermediate entity to country.",
+            ]
+        template = templates[(variant - 1) % len(templates)]
+        question = template.format(
+            entity=seed.entity,
+            target=profile.target_description,
+            first_intent=profile.first_intent,
+        )
+        round_number = ((variant - 1) // len(templates)) + 1
+        if round_number > 1:
+            question = (
+                f"{question} Start from {seed.intermediate}, then resolve the final country."
+            )
+        return question
+
+    def _relation_profile_for_relation(self, relation: str) -> RelationProfile:
+        return RELATION_PROFILE_BY_ALIAS.get(
+            relation,
+            RELATION_PROFILE_BY_ALIAS["birthplace_country"],
+        )
+
+    def _relation_profile_for_task(self, task: EvolvedTask) -> RelationProfile:
+        relation = str(task.source.get("relation", "birthplace_country"))
+        return self._relation_profile_for_relation(relation)
+
+    def _relation_profile_for_sample(self, sample: AgentDataSample) -> RelationProfile:
+        relation = str(sample.source.get("relation", "birthplace_country"))
+        return self._relation_profile_for_relation(relation)
+
+    def _tool_plan_for_seed(
+        self, seed: SeedTask, profile: RelationProfile
+    ) -> list[ToolCall]:
+        return [
+            ToolCall(
+                tool="wikidata_lookup",
+                query=f"{seed.entity}, {profile.first_property}",
+                result=seed.intermediate,
+            ),
+            ToolCall(
+                tool="wikidata_lookup",
+                query=f"{seed.intermediate}, {profile.second_property}",
+                result=seed.answer,
+            ),
+        ]
+
     def generate_trajectory(self, task: EvolvedTask) -> AgentDataSample:
         source = dict(task.source)
         source["data_version"] = self._data_version
+        profile = self._relation_profile_for_task(task)
         if self._data_version == "canonical-v5-blind-hard":
             source["observation_grounding"] = "gold_tool_results"
             source["observation_conditioning"] = "blind_tool_generation"
@@ -491,6 +651,31 @@ class AgentDataFactory:
                 "blind_tool_selection",
                 "withheld_property_ids",
                 "alias_trap",
+                "intent_distractor",
+                "noisy_context",
+            ]
+        elif self._data_version == "canonical-v7-relation-diverse":
+            source["observation_grounding"] = "gold_tool_results"
+            source["observation_conditioning"] = "blind_relation_tool_selection"
+            source["lookup_observation_block"] = False
+            source["distractor_lookup_observation"] = False
+            source["heldout_profile"] = "v7-relation-diverse"
+            source["relation_profile"] = profile.name
+            source["first_lookup_intent"] = profile.first_intent
+            source["second_lookup_intent"] = profile.second_intent
+            source["conflict_types"] = self._conflict_types_for_task(task) + [
+                "relation_intent_distractor",
+                "withheld_property_ids",
+                "relation_path_diversity",
+            ]
+            source["observation_grounding_policy"] = (
+                "model_must_select_relation_lookup_intents_without_property_id_hints"
+            )
+            source["difficulty_factors"] = [
+                "blind_observation_generation",
+                "blind_tool_selection",
+                "withheld_property_ids",
+                "relation_diversity",
                 "intent_distractor",
                 "noisy_context",
             ]
@@ -542,6 +727,8 @@ class AgentDataFactory:
             question = self._with_blind_hard_prompt(question, task)
         elif self._data_version == "canonical-v6-blind-tool-choice-hard":
             question = self._with_blind_tool_choice_hard_prompt(question, task)
+        elif self._data_version == "canonical-v7-relation-diverse":
+            question = self._with_relation_diverse_tool_choice_prompt(question, task)
         elif self._data_version == "canonical-v4-hard":
             question = self._with_hard_lookup_observation_block(question, task)
         elif self._data_version == "canonical-v4":
@@ -556,6 +743,10 @@ class AgentDataFactory:
                 question = self._with_blind_hard_prompt(question, task)
             elif self._data_version == "canonical-v6-blind-tool-choice-hard":
                 question = self._with_blind_tool_choice_hard_prompt(question, task)
+            elif self._data_version == "canonical-v7-relation-diverse":
+                question = self._with_relation_diverse_tool_choice_prompt(
+                    question, task
+                )
             elif self._data_version == "canonical-v4-hard":
                 question = self._with_hard_lookup_observation_block(question, task)
             elif self._data_version == "canonical-v4":
@@ -576,6 +767,7 @@ class AgentDataFactory:
                     "canonical-v4-hard",
                     "canonical-v5-blind-hard",
                     "canonical-v6-blind-tool-choice-hard",
+                    "canonical-v7-relation-diverse",
                 }
                 else task.difficulty
             ),
@@ -722,6 +914,44 @@ class AgentDataFactory:
         ]
         return "\n".join(prompt_lines)
 
+    def _with_relation_diverse_tool_choice_prompt(
+        self, question: str, task: EvolvedTask
+    ) -> str:
+        entity = self._entity_from_tool_plan(task)
+        profile = self._relation_profile_for_task(task)
+        alias_traps = self._alias_traps_for_answer(task.answer)
+        distractor = self._distractor_result_for_task(task)
+        noisy_context = task.noisy_context or [
+            f"{entity} has unrelated biographical details that are not evidence for {profile.target_description}."
+        ]
+        candidate_intents = [
+            profile.first_intent,
+            profile.second_intent,
+            *profile.distractor_intents,
+            "field of work or topic associated with the named person",
+        ]
+        prompt_lines = [
+            question,
+            "",
+            "Tool choice challenge:",
+            "- Write a concise ReAct trace with the lookup tool when needed.",
+            "- Decide which lookup intents are relevant; some listed intents are distractors.",
+            "- Do not use birthplace, nationality, employer, education, or award clues unless they match the requested relation path.",
+            f"- The final answer must be the {profile.target_description} supported by the selected relation path.",
+            "",
+            "Relation-diverse challenge:",
+            f"- Requested relation path: {profile.target_description}.",
+            "- Property identifiers are intentionally hidden; infer the needed lookup intents from the task.",
+            "",
+            "Candidate lookup intents:",
+            *[f"- {intent}" for intent in candidate_intents],
+            "",
+            f"Alias trap: {', '.join(alias_traps)} and {distractor} may look relevant but are not sufficient.",
+            "Noisy context:",
+            *[f"- {item}" for item in noisy_context],
+        ]
+        return "\n".join(prompt_lines)
+
     def _conflict_types_for_task(self, task: EvolvedTask) -> list[str]:
         conflict_types = ["country_alias", "birthplace_alias"]
         if task.noisy_context or task.task_type == "noisy_context_retrieval_qa":
@@ -729,11 +959,12 @@ class AgentDataFactory:
         return conflict_types
 
     def _default_trajectory(self, task: EvolvedTask) -> list[str]:
+        profile = self._relation_profile_for_task(task)
         trajectory = [
-            "Thought: Identify the entity's birthplace.",
+            f"Thought: {profile.first_thought}",
             f"Action: wikidata_lookup[{task.tool_plan[0].query}]",
             f"Observation: {task.tool_plan[0].result}",
-            "Thought: Resolve the country from the intermediate location.",
+            f"Thought: {profile.second_thought}",
             f"Action: wikidata_lookup[{task.tool_plan[1].query}]",
             f"Observation: {task.tool_plan[1].result}",
             f"Final: {task.answer}",
@@ -758,6 +989,12 @@ class AgentDataFactory:
 
     def _default_question_for_task(self, task: EvolvedTask) -> str:
         entity = self._entity_from_tool_plan(task)
+        profile = self._relation_profile_for_task(task)
+        if profile.name != "birthplace_country":
+            return (
+                f"Use the lookup tool to identify the {profile.target_description} "
+                f"for {entity}."
+            )
         if task.task_type == "tool_use_qa":
             return (
                 f"Use the lookup tool to find {entity}'s birthplace and return "
@@ -773,12 +1010,7 @@ class AgentDataFactory:
     def _entity_from_tool_plan(self, task: EvolvedTask) -> str:
         if not task.tool_plan:
             return "the person"
-        query = task.tool_plan[0].query
-        suffixes = (", P19", " birthplace")
-        for suffix in suffixes:
-            if query.endswith(suffix):
-                return query[: -len(suffix)]
-        return query
+        return self._entity_from_query(task.tool_plan[0].query)
 
     def _is_react_trajectory(self, trajectory: list[str], answer: str) -> bool:
         trajectory_text = " ".join(trajectory).lower()
@@ -869,6 +1101,12 @@ class AgentDataFactory:
 
     def _default_question_for_sample(self, sample: AgentDataSample) -> str:
         entity = self._entity_from_tool_query(sample)
+        profile = self._relation_profile_for_sample(sample)
+        if profile.name != "birthplace_country":
+            return (
+                f"Use the lookup tool to identify the {profile.target_description} "
+                f"for {entity}."
+            )
         if sample.task_type == "tool_use_qa":
             return (
                 f"Use the lookup tool to find {entity}'s birthplace and return "
@@ -885,6 +1123,7 @@ class AgentDataFactory:
         self, sample: AgentDataSample, duplicate_index: int
     ) -> str:
         entity = self._entity_from_tool_query(sample)
+        profile = self._relation_profile_for_sample(sample)
         intermediate = (
             sample.tool_calls[0].result if sample.tool_calls else "the birthplace"
         )
@@ -905,13 +1144,22 @@ class AgentDataFactory:
         constraint = natural_constraints[
             (duplicate_index - 1) % len(natural_constraints)
         ]
+        if profile.name != "birthplace_country":
+            constraint = (
+                f"Use the {profile.target_description} path, starting from {intermediate}."
+            )
         return f"{sample.question} {constraint}"
 
     def _entity_from_tool_query(self, sample: AgentDataSample) -> str:
         if not sample.tool_calls:
             return "the person"
-        query = sample.tool_calls[0].query
-        suffixes = (", P19", " birthplace")
+        return self._entity_from_query(sample.tool_calls[0].query)
+
+    def _entity_from_query(self, query: str) -> str:
+        property_match = re.match(r"(.+?)\s*,\s*P\d+\s*$", query)
+        if property_match:
+            return property_match.group(1).strip()
+        suffixes = (" birthplace", " education institution", " employer", " award")
         for suffix in suffixes:
             if query.endswith(suffix):
                 return query[: -len(suffix)]

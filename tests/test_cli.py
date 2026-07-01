@@ -310,6 +310,76 @@ def test_cli_generate_supports_canonical_v6_blind_tool_choice_hard_data_version(
     assert "P17" not in sft["messages"][1]["content"]
 
 
+def test_cli_generate_supports_canonical_v7_relation_diverse_data_version(
+    tmp_path: Path,
+):
+    seed_file = tmp_path / "relation_diverse_seeds.jsonl"
+    seed_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "id": "v7-education",
+                        "task_type": "tool_use_qa",
+                        "entity": "Alan Turing",
+                        "relation": "education_country",
+                        "intermediate": "University of Cambridge",
+                        "answer": "United Kingdom",
+                        "evidence": [
+                            "Alan Turing was educated at University of Cambridge.",
+                            "University of Cambridge is located in United Kingdom.",
+                        ],
+                        "noisy_context": ["Alan Turing worked on computing theory."],
+                    }
+                )
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "canonical-v7-relation-diverse"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "generate",
+            "--count",
+            "1",
+            "--seed-file",
+            str(seed_file),
+            "--out-dir",
+            str(out_dir),
+            "--data-version",
+            "canonical-v7-relation-diverse",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "accepted=1 rejected=0" in result.stdout
+    sample = json.loads(
+        (out_dir / "samples.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert sample["difficulty"] == "hard"
+    assert sample["source"]["data_version"] == "canonical-v7-relation-diverse"
+    assert sample["source"]["heldout_profile"] == "v7-relation-diverse"
+    assert sample["source"]["relation_profile"] == "education_country"
+    assert sample["tool_calls"][0]["query"] == "Alan Turing, P69"
+    assert sample["source"]["lookup_observation_block"] is False
+    assert "Relation-diverse challenge:" in sample["question"]
+    assert "Candidate lookup intents:" in sample["question"]
+    assert "Available lookup observations:" not in sample["question"]
+    assert "P69" not in sample["question"]
+    assert "P17" not in sample["question"]
+    sft = json.loads(
+        (out_dir / "sft_conversations.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert "P69" not in sft["messages"][1]["content"]
+    assert "P17" not in sft["messages"][1]["content"]
+
+
 def test_cli_generate_batches_export_artifacts_after_all_batches(tmp_path: Path):
     out_dir = tmp_path / "batched"
     result = subprocess.run(
@@ -471,6 +541,38 @@ def test_cli_build_seeds_supports_offset_for_heldout_file(tmp_path: Path):
     assert "rows=3" in result.stdout
     assert len(rows) == 3
     assert {row["entity"] for row in rows} == {"James Clerk Maxwell"}
+
+
+def test_cli_build_seeds_supports_relation_diverse_file(tmp_path: Path):
+    out_file = tmp_path / "relation-diverse.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openseeker_factory.cli",
+            "build-seeds",
+            "--out-file",
+            str(out_file),
+            "--relation-diverse",
+            "--limit",
+            "8",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in out_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "rows=8" in result.stdout
+    assert len(rows) == 8
+    assert {"education_country", "employer_country", "award_country"} <= {
+        row["relation"] for row in rows
+    }
 
 
 def test_cli_evaluate_model_scores_prediction_file(tmp_path: Path):

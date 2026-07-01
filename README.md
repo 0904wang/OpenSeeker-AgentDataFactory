@@ -199,6 +199,39 @@ Candidate lookup intents:
 
 This split is useful when answer accuracy is already saturated and you need observation-level metrics to expose whether the model is faithfully reproducing the intermediate evidence.
 
+### Canonical-v7 Relation-diverse Data
+
+Use `--data-version canonical-v7-relation-diverse` when v4/v5/v6 are saturated and the next question is whether the model generalizes beyond the birthplace-to-country path family. v7 keeps the blind tool-choice structure from v6 but adds relation profiles:
+
+| Relation profile | First lookup | Second lookup | Target |
+| --- | --- | --- | --- |
+| `birthplace_country` | person -> birthplace | place -> country | country of the birthplace |
+| `education_country` | person -> education institution | institution -> country | country of the education institution |
+| `employer_country` | person -> employer | organization -> country | country of the employer |
+| `award_country` | person -> award | award -> country | country associated with the award |
+
+The user prompt hides property IDs such as `P19`, `P69`, `P108`, `P166`, and `P17`; it only exposes natural-language candidate lookup intents plus distractors.
+
+Build a relation-diverse seed file:
+
+```bash
+python -m openseeker_factory.cli build-seeds \
+  --relation-diverse \
+  --out-file outputs/v7-relation-diverse-seeds.jsonl
+```
+
+Generate v7 samples:
+
+```bash
+python -m openseeker_factory.cli generate \
+  --count 200 \
+  --seed-file outputs/v7-relation-diverse-seeds.jsonl \
+  --out-dir outputs/v7-relation-diverse-heldout200 \
+  --data-version canonical-v7-relation-diverse
+```
+
+Local smoke status: 8 generated, 8 accepted, no property IDs or `wikidata_lookup[...]` templates leaked into questions. Remote heldout generation and model evaluation still need a separate approved launch.
+
 ## Optional Teacher Backend
 
 `generate` can also draft tasks through an OpenAI-compatible endpoint. For DeepSeek official API:
@@ -350,6 +383,7 @@ Every completed remote experiment is recorded under `docs/experiments/`. Key rec
 | `2026-07-01-rft-round1-a0-k4-t1p0.md` | RFT Round 1 sampling audit from the restored A0 SFT checkpoint |
 | `2026-07-01-sft-rft-round1-changed-3p5k-gpu06.md` | continued SFT on 1,095 changed RFT trajectories mixed with the 2.4k base |
 | `2026-07-01-rftchanged-round1-v6-v4-v5-eval.md` | RFT changed-only round1 evaluation on v6 plus v4/v5 regression heldouts |
+| `2026-07-01-canonical-v7-relation-diverse-local.md` | local v7 relation-diverse implementation and smoke audit |
 
 ## Limitations and Next Steps
 
@@ -359,14 +393,15 @@ Current limitations:
 - The current best scale is 3.5k SFT rows after RFT, not 20k/50k.
 - The reported improvement is on the project heldout suite, not on broad public agent benchmarks.
 - RFT / ReST-EM continued SFT is verified; verl / GRPO verifier-reward RL is not yet run.
+- `canonical-v7-relation-diverse` is implemented and locally smoke-tested, but remote heldout evaluation is not yet run.
 
 Recommended next technical step:
 
 ```text
-canonical-v7 relation-diverse heldout
+remote canonical-v7 relation-diverse heldout200 generation and evaluation
 ```
 
-The v7 split should add relation paths beyond birthplace-to-country, such as education institution to country, award organization to country, employer headquarters to country, or publication venue to country. That would test whether the data factory generalizes beyond the current P19/P17 reasoning family.
+The v7 split now adds relation paths beyond birthplace-to-country, including education institution to country, employer to country, and award to country. The next evidence-producing step is to generate a remote v7 heldout200 and evaluate the current RFT checkpoint against it.
 
 ## Resume Boundary
 

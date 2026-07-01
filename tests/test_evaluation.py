@@ -279,6 +279,68 @@ def test_format_prompt_requires_bounded_lookup_and_final_line():
     assert "Do not output any text after Final" in user_content
 
 
+def test_format_prompt_does_not_leak_birthplace_path_for_relation_diverse_samples():
+    class FakeChatTokenizer:
+        chat_template = "fake"
+
+        def __init__(self):
+            self.messages = None
+
+        def apply_chat_template(self, messages, **kwargs):
+            self.messages = messages
+            return "rendered prompt"
+
+    sample = AgentDataSample(
+        id="v7-education",
+        task_type="tool_use_qa",
+        question=(
+            "Use the available lookup tool to identify the country of the "
+            "education institution for Alan Turing.\n\n"
+            "Tool choice challenge:\n"
+            "- Decide which lookup intents are relevant."
+        ),
+        answer="United Kingdom",
+        gold_evidence=[
+            "Alan Turing was educated at University of Cambridge.",
+            "University of Cambridge is located in United Kingdom.",
+        ],
+        tool_calls=[
+            ToolCall(
+                tool="wikidata_lookup",
+                query="Alan Turing, P69",
+                result="University of Cambridge",
+            ),
+            ToolCall(
+                tool="wikidata_lookup",
+                query="University of Cambridge, P17",
+                result="United Kingdom",
+            ),
+        ],
+        trajectory=[
+            "Thought: Identify the education institution linked to the entity.",
+            "Action: wikidata_lookup[Alan Turing, P69]",
+            "Observation: University of Cambridge",
+            "Thought: Resolve the country for that institution.",
+            "Action: wikidata_lookup[University of Cambridge, P17]",
+            "Observation: United Kingdom",
+            "Final: United Kingdom",
+        ],
+        verifier_result=VerifierResult(passed=True, checks={}, reasons=[]),
+        difficulty="hard",
+        source={"data_version": "canonical-v7-relation-diverse"},
+        quality_score=1.0,
+    )
+    tokenizer = FakeChatTokenizer()
+
+    _format_prompt(tokenizer, sample, enable_thinking=False)
+
+    system_content = tokenizer.messages[0]["content"].lower()
+    assert "birthplace" not in system_content
+    assert "requested relation" in system_content
+    assert "at most two" in system_content
+    assert "final: <country>" in system_content
+
+
 def test_summarize_prediction_rows_includes_overall_and_task_rows():
     rows = [
         evaluate_prediction(

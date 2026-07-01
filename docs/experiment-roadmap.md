@@ -200,18 +200,46 @@ Status update:
 
 Goal: reduce overfitting to the current birthplace-to-country path family.
 
-Candidate relation paths:
+Local implementation status: completed and smoke-tested. Remote heldout generation and model evaluation are still pending.
+
+Implemented relation paths:
 
 - person birthplace -> country
 - person educated at -> institution country
-- person employer -> headquarters country
-- award -> conferring organization country
-- publication venue -> country
+- person employer -> organization country
+- person award -> award-associated country
+
+Local smoke evidence:
+
+```text
+build-seeds --relation-diverse --limit 8 -> 8 seed rows
+generate --data-version canonical-v7-relation-diverse --count 8 -> accepted=8 rejected=0
+relation distribution -> 2 birthplace, 2 education, 2 employer, 2 award
+question leakage audit -> 0 property IDs, 0 wikidata_lookup templates
+summary metrics -> solvability/evidence/tool/trajectory all 1.0
+```
 
 Acceptance:
 
-- v7 user prompts hide explicit relation IDs and tool schemas, similar to v6
+- local v7 user prompts hide explicit relation IDs and tool schemas, similar to v6
 - deterministic verifier checks exact intermediate evidence for each relation path
 - heldout includes distractor relation intents
+- remote heldout200 generation is recorded under `docs/experiments/`
 - evaluation reports answer, tool-call, trajectory, observation-faithfulness, and hallucination metrics
-- targeted SFT improves v7 observation faithfulness without regressing v4/v5/v6
+- targeted SFT or RFT improves v7 observation faithfulness without regressing v4/v5/v6
+
+Recommended next run:
+
+```bash
+python -m openseeker_factory.cli build-seeds \
+  --relation-diverse \
+  --out-file /data/wzl/OpenSeeker-AgentDataFactory/data/seeds/wikidata_seed_relation_diverse_v7_heldout200.jsonl
+
+python -m openseeker_factory.cli generate \
+  --count 200 \
+  --seed-file /data/wzl/OpenSeeker-AgentDataFactory/data/seeds/wikidata_seed_relation_diverse_v7_heldout200.jsonl \
+  --out-dir /data/wzl/OpenSeeker-AgentDataFactory/results/heldout-eval-samples-200-canonical-v7-relation-diverse \
+  --data-version canonical-v7-relation-diverse
+```
+
+This still requires the normal remote preflight, smoke test, launch report, and user approval.

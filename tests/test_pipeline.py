@@ -3,7 +3,7 @@ from pathlib import Path
 from threading import Lock
 from time import sleep
 
-from openseeker_factory.pipeline import AgentDataFactory
+from openseeker_factory.pipeline import AgentDataFactory, SeedTask
 from openseeker_factory.schema import AgentDataSample
 
 
@@ -377,6 +377,86 @@ def test_factory_can_generate_canonical_v6_blind_tool_choice_hard_heldout_sample
     assert "Candidate lookup intents:" in sample.question
     assert "Noisy context:" in sample.question
     assert sample.verifier_result.checks["observation_faithfulness"] is True
+
+
+def test_factory_can_generate_canonical_v7_relation_diverse_heldout_samples():
+    seeds = [
+        SeedTask(
+            id="v7-education",
+            task_type="tool_use_qa",
+            entity="Alan Turing",
+            relation="education_country",
+            intermediate="University of Cambridge",
+            answer="United Kingdom",
+            evidence=[
+                "Alan Turing was educated at University of Cambridge.",
+                "University of Cambridge is located in United Kingdom.",
+            ],
+            noisy_context=["Alan Turing worked on computing theory."],
+        ),
+        SeedTask(
+            id="v7-employer",
+            task_type="multi_hop_qa",
+            entity="Grace Hopper",
+            relation="employer_country",
+            intermediate="United States Navy",
+            answer="United States",
+            evidence=[
+                "Grace Hopper worked for United States Navy.",
+                "United States Navy is headquartered in United States.",
+            ],
+            noisy_context=["Grace Hopper is associated with compiler design."],
+        ),
+        SeedTask(
+            id="v7-award",
+            task_type="noisy_context_retrieval_qa",
+            entity="Marie Curie",
+            relation="award_country",
+            intermediate="Nobel Prize in Chemistry",
+            answer="Sweden",
+            evidence=[
+                "Marie Curie received the Nobel Prize in Chemistry.",
+                "Nobel Prize in Chemistry is associated with Sweden.",
+            ],
+            noisy_context=["Marie Curie also worked in France."],
+        ),
+    ]
+    factory = AgentDataFactory(seeds, data_version="canonical-v7-relation-diverse")
+
+    accepted, rejected, metrics = factory.generate_verified(count=3)
+
+    assert rejected == []
+    assert metrics.accepted == 3
+    relation_profiles = {sample.source["relation_profile"] for sample in accepted}
+    assert relation_profiles == {
+        "education_country",
+        "employer_country",
+        "award_country",
+    }
+    first_hop_queries = [sample.tool_calls[0].query for sample in accepted]
+    assert first_hop_queries == [
+        "Alan Turing, P69",
+        "Grace Hopper, P108",
+        "Marie Curie, P166",
+    ]
+    for sample in accepted:
+        assert sample.difficulty == "hard"
+        assert sample.source["data_version"] == "canonical-v7-relation-diverse"
+        assert sample.source["heldout_profile"] == "v7-relation-diverse"
+        assert sample.source["observation_conditioning"] == "blind_relation_tool_selection"
+        assert sample.source["lookup_observation_block"] is False
+        assert "Tool choice challenge:" in sample.question
+        assert "Relation-diverse challenge:" in sample.question
+        assert "Candidate lookup intents:" in sample.question
+        assert "Available lookup observations:" not in sample.question
+        assert "P69" not in sample.question
+        assert "P108" not in sample.question
+        assert "P166" not in sample.question
+        assert "P17" not in sample.question
+        assert "wikidata_lookup[" not in sample.question
+        assert sample.verifier_result.checks["observation_faithfulness"] is True
+        assert sample.verifier_result.checks["tool_success"] is True
+        assert sample.verifier_result.checks["question_entity_alignment"] is True
 
 
 def test_factory_uses_canonical_wikidata_property_ids_in_default_tool_plan():
