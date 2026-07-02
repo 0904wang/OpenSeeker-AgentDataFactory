@@ -109,6 +109,8 @@ def run_rlvr_smoke(
     model.config.use_cache = False
     if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
     model.to(resolved_device)
 
     prompts = {
