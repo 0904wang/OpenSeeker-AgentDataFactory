@@ -14,6 +14,7 @@ from openseeker_factory.evaluation import (
 from openseeker_factory.pipeline import AgentDataFactory
 from openseeker_factory.rft import run_rft_filter, run_sample_rft_candidates
 from openseeker_factory.rewards import run_score_verifier_rewards
+from openseeker_factory.rlvr import run_rlvr_smoke
 from openseeker_factory.schema import AgentDataSample
 from openseeker_factory.seed_bank import build_wikidata_seed_rows, write_seed_jsonl
 
@@ -398,6 +399,37 @@ def build_parser() -> argparse.ArgumentParser:
         default="weighted",
         help="Primary reward column to emit for RL training.",
     )
+    rlvr_train = subparsers.add_parser(
+        "train-rlvr-smoke",
+        help="Run a small verifier-reward policy optimization smoke experiment.",
+    )
+    rlvr_train.add_argument("--samples", type=Path, required=True)
+    rlvr_train.add_argument("--out-dir", type=Path, required=True)
+    rlvr_train.add_argument("--model-label", required=True)
+    rlvr_train.add_argument("--model-name-or-path", required=True)
+    rlvr_train.add_argument("--adapter-path", default=None)
+    rlvr_train.add_argument(
+        "--algorithm",
+        choices=["grpo", "arpo"],
+        default="grpo",
+        help="Rollout strategy. arpo uses branch rollouts after the first Observation.",
+    )
+    rlvr_train.add_argument(
+        "--reward-mode",
+        choices=["binary", "weighted"],
+        default="weighted",
+    )
+    rlvr_train.add_argument("--limit", type=int, default=8)
+    rlvr_train.add_argument("--offset", type=int, default=0)
+    rlvr_train.add_argument("--num-generations", type=int, default=4)
+    rlvr_train.add_argument("--max-new-tokens", type=int, default=160)
+    rlvr_train.add_argument("--learning-rate", type=float, default=5e-7)
+    rlvr_train.add_argument("--num-train-epochs", type=float, default=1.0)
+    rlvr_train.add_argument("--max-train-rollouts", type=int, default=None)
+    rlvr_train.add_argument("--device", default=None)
+    rlvr_train.add_argument("--local-files-only", action="store_true")
+    rlvr_train.add_argument("--disable-thinking", action="store_true")
+    rlvr_train.add_argument("--seed", type=int, default=20260702)
     return parser
 
 
@@ -749,6 +781,37 @@ def main(argv: list[str] | None = None) -> int:
             f"reward_avg={summary['reward_avg']} "
             f"binary_pass_rate={summary['binary_pass_rate']} "
             f"rewards={rewards_path}"
+        )
+        return 0
+    if args.command == "train-rlvr-smoke":
+        summary = run_rlvr_smoke(
+            samples_path=args.samples,
+            out_dir=args.out_dir,
+            model_label=args.model_label,
+            model_name_or_path=args.model_name_or_path,
+            adapter_path=args.adapter_path,
+            algorithm=args.algorithm,
+            reward_mode=args.reward_mode,
+            limit=args.limit,
+            offset=args.offset,
+            num_generations=args.num_generations,
+            max_new_tokens=args.max_new_tokens,
+            learning_rate=args.learning_rate,
+            num_train_epochs=args.num_train_epochs,
+            max_train_rollouts=args.max_train_rollouts,
+            device=args.device,
+            local_files_only=args.local_files_only,
+            disable_thinking=args.disable_thinking,
+            seed=args.seed,
+        )
+        print(
+            f"OpenSeeker RLVR smoke complete: "
+            f"algorithm={summary['algorithm']} "
+            f"rollouts={summary['rollouts']} "
+            f"reward_avg={summary['reward_avg']} "
+            f"binary_pass_rate={summary['binary_pass_rate']} "
+            f"train_steps={summary['train_steps']} "
+            f"out_dir={args.out_dir}"
         )
         return 0
     raise ValueError(f"Unknown command: {args.command}")
